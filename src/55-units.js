@@ -19,18 +19,28 @@ function initUnitViews(S) {
   }
 }
 
-function drawUnits(S, t, sel) {
+function drawUnits(S, t, P) {
   UNITS.torch.length = 0;
   const I = KIT.item;
   for (const v of UNITS.views) {
     const u = v.u, look = v.look;
     if (u.hp <= 0) { if (v.flame) v.flame.on = 0; if (v.light) v.light.alive = false; continue; }
-    const p = tileWorld(S, u.x, u.y), picked = sel && sel.x === u.x && sel.y === u.y;
-    v.x = p.x; v.z = p.z; v.y = standY(S, u.x, u.y) + (picked ? .12 + .08 * Math.sin(t * 6) : 0);
+    // Đang đi: nội suy giữa hai ô, nảy nhẹ khi đổi bậc; quay mặt theo hướng bước.
+    const a = Play.animPos(P, u), picked = !a && P.mode === 'chon' && P.unit === u;
+    if (a) {
+      const p0 = tileWorld(S, a.from[0], a.from[1]), p1 = tileWorld(S, a.to[0], a.to[1]);
+      const y0 = standY(S, a.from[0], a.from[1]), y1 = standY(S, a.to[0], a.to[1]);
+      v.x = lerp(p0.x, p1.x, a.k); v.z = lerp(p0.z, p1.z, a.k);
+      v.y = lerp(y0, y1, a.k) + Math.sin(a.k * PI) * (.12 + Math.abs(y1 - y0) * .6);
+      v.yaw = Math.atan2(a.dx, a.dy);
+    } else { const p = tileWorld(S, u.x, u.y); v.x = p.x; v.z = p.z; v.y = standY(S, u.x, u.y) + (picked ? .12 + .08 * Math.sin(t * 6) : 0); }
+    // Đã đi: tối và lạnh màu đi (kiểu FE: quân xám = hết lượt).
+    let tint = look.tint || null;
+    if (u.done && !a) tint = tint ? [tint[0] * .45, tint[1] * .45, tint[2] * .5] : [.45, .45, .5];
     const breath = Math.sin(t * 1.8 + v.seed) * .04;
     const e = {
-      x: v.x, y: v.y, z: v.z, yaw: v.yaw + Math.sin(t * .4 + v.seed) * .08, mv: picked ? .25 : 0, ph: t * 4 + v.seed, atk: -1, flinch: 0,
-      scale: (look.scale || 1) * 1.8, tint: look.tint || null,
+      x: v.x, y: v.y, z: v.z, yaw: v.yaw + Math.sin(t * .4 + v.seed) * .08, mv: a ? 1 : picked ? .25 : 0, ph: t * (a ? 9 : 4) + v.seed, atk: -1, flinch: 0,
+      scale: (look.scale || 1) * 1.8, tint,
       weapon: look.weapon ? I[look.weapon] : null, wScale: look.weapon === 'greatsword' ? .8 : 1,
       shield: look.shield ? I[look.shield] : null, helm: !!look.helm, plate: !!look.plate, robe: !!look.robe, hood: !!look.hood,
       torch: !!(look.torch || look.lantern), stoop: breath,

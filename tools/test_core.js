@@ -4,7 +4,8 @@ const ROOT = path.dirname(__dirname);
 const rd = p => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const DATA = { terrain: rd('data/terrain.json'), units: rd('data/units.json'), maps: {} };
 for (const f of fs.readdirSync(path.join(ROOT, 'data/maps'))) if (f.endsWith('.json')) { const m = rd('data/maps/' + f); DATA.maps[m.id] = m; }
-const Core = vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'src/34-core.js'), 'utf8') + '\nCore', {});
+const src = f => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8');
+const { Core, Play } = vm.runInNewContext(src('34-core.js') + '\n' + src('36-play.js') + '\n({ Core, Play })', {});
 const eq = (a, b) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b)); // mảng từ vm khác realm nên so qua JSON
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok', name); };
 
@@ -99,5 +100,39 @@ t('map thử: vách núi góc Đông Nam chỉ lên được qua dốc', () => {
   assert.ok(Core.canStep(S, 8, 15, 9, 15, 'bay', DATA));
   const R = Core.reachable(S, Core.unitAt(S, 1, 13), DATA);  // Đăng, Mov 5
   assert.ok(R.stops.length > 10 && Core.pathTo(R, 1, 13).length === 1);
+});
+// ----- Chọn quân → ô đích → đi (tuần 2, buổi 2) -----
+t('chạm quân ta: chọn và có vùng đi; chạm địch/NPC chỉ xem', () => {
+  const M = mk(['.....', '.....']); const me = put(M, 0, 0, { mov: 3 }); put(M, 4, 1, { side: 'dich' }); const P = Play.create(M, DATA);
+  assert.strictEqual(Play.tap(P, 4, 1), 'xem'); assert.strictEqual(P.mode, 'cho');
+  assert.strictEqual(Play.tap(P, 0, 0), 'chon'); assert.strictEqual(P.unit, me); assert.ok(P.R.stops.length > 1);
+});
+t('chạm ô đích hiện đường, chạm lần nữa thì đi và done', () => {
+  const M = mk(['.....']); const me = put(M, 0, 0, { mov: 3 }); const P = Play.create(M, DATA);
+  Play.tap(P, 0, 0); assert.strictEqual(Play.tap(P, 3, 0), 'dich'); eq(P.path, [[0, 0], [1, 0], [2, 0], [3, 0]]);
+  assert.strictEqual(me.x, 0);                               // chưa đi khi mới chạm lần đầu
+  assert.strictEqual(Play.tap(P, 3, 0), 'di'); assert.strictEqual(me.x, 3); assert.ok(me.done);
+  assert.strictEqual(P.mode, 'di'); assert.strictEqual(Play.tap(P, 1, 0), 'ban');
+  Play.update(P, Play.STEP_TIME * 1.5); const a = Play.animPos(P, me); eq(a.from, [1, 0]); eq(a.to, [2, 0]);
+  Play.update(P, 1); assert.strictEqual(P.mode, 'cho'); assert.strictEqual(Play.animPos(P, me), null);
+  assert.strictEqual(Play.tap(P, 3, 0), 'xem');               // đã đi thì không chọn lại được
+});
+t('đổi ô đích; chạm ngoài vùng / ngoài bàn cờ thì hủy', () => {
+  const M = mk(['......']); put(M, 0, 0, { mov: 2 }); const P = Play.create(M, DATA);
+  Play.tap(P, 0, 0); Play.tap(P, 1, 0); assert.strictEqual(Play.tap(P, 2, 0), 'dich'); eq(P.target, { x: 2, y: 0 });
+  assert.strictEqual(Play.tap(P, 5, 0), 'huy'); assert.strictEqual(P.mode, 'cho');
+  Play.tap(P, 0, 0); assert.strictEqual(Play.tap(P, null, null), 'huy');
+});
+t('ô có quân ta / rương (quân bay): đi qua được, không dừng; chạm quân ta khác thì đổi chọn', () => {
+  const M = mk(['.....']); const me = put(M, 0, 0, { mov: 4, mt: 'bay' }); const fr = put(M, 1, 0); M.chests.push({ x: 2, y: 0, item: 'x', open: false });
+  const P = Play.create(M, DATA); Play.tap(P, 0, 0);
+  assert.strictEqual(Play.tap(P, 2, 0), 'quaduoc'); assert.strictEqual(P.target, null);
+  assert.strictEqual(Play.tap(P, 3, 0), 'dich'); eq(P.path, [[0, 0], [1, 0], [2, 0], [3, 0]]);
+  assert.strictEqual(Play.tap(P, 1, 0), 'chon'); assert.strictEqual(P.unit, fr);
+});
+t('chạm lại chính ô đang đứng hai lần = đứng yên, vẫn tính là đã đi', () => {
+  const M = mk(['...']); const me = put(M, 1, 0); const P = Play.create(M, DATA);
+  Play.tap(P, 1, 0); assert.strictEqual(Play.tap(P, 1, 0), 'dich'); assert.strictEqual(Play.tap(P, 1, 0), 'di'); assert.ok(me.done);
+  Play.update(P, 0); assert.strictEqual(P.mode, 'cho'); assert.strictEqual(Play.left(P), 0);
 });
 console.log(n + ' bài kiểm thử đạt');

@@ -1,6 +1,7 @@
 {
   "_doc": "Bảng địa hình theo GDD 3.1. cost: chi phí di chuyển theo loại quân (null = không đi được). avo = cộng Né, def = cộng Thủ. Giá trị khởi điểm, chỉnh ở tuần 2.",
   "moveTypes": ["bo", "nhe", "bay", "thuy"],
+  "height": { "_doc": "GDD 3.2. cliff: chênh từ ngần này bậc trở lên thì không đi được (lên lẫn xuống), trừ khi ô đi hoặc ô đến là dốc. climbCost: chi phí cộng thêm cho mỗi bậc đi lên (xuống không tốn); có thể ghi đè theo độ khó. Quân bay bỏ qua cả hai.", "cliff": 2, "climbCost": 1 },
   "tiles": {
     ".": { "id": "dong",      "name": "Đồng",       "cost": { "bo": 1,    "nhe": 1,    "bay": 1, "thuy": null }, "avo": 0,   "def": 0 },
     "=": { "id": "duong",     "name": "Đường",      "cost": { "bo": 1,    "nhe": 1,    "bay": 1, "thuy": null }, "avo": 0,   "def": 0 },

@@ -31,4 +31,72 @@ t('bắt lỗi map sai', () => {
   const e = Core.validateMap(bad, DATA); assert.ok(e.length >= 3, e.join('\n'));
 });
 t('RNG có seed phát lại được', () => { const a = Core.rng(42), b = Core.rng(42); const xs = [a(), a(), a()]; eq(xs, [b(), b(), b()]); assert.ok(xs.every(v => v >= 0 && v < 1)); });
+// ----- Tìm đường & vùng đi được (tuần 2) -----
+// Map nhỏ dựng tại chỗ; quân tạo từ mẫu 'dang' rồi ghi đè loại quân / Mov / phe.
+const mk = (terrain, height) => Core.loadMap({ id: 'tmp', terrain, height: height || terrain.map(r => '0'.repeat(r.length)) }, DATA);
+const put = (S, x, y, o = {}) => { const u = Core.makeUnit('dang', DATA, o.side || 'ta', x, y, S.units.length + 1); if (o.mt) u.moveType = o.mt; if (o.mov !== undefined) u.stats.mov = o.mov; S.units.push(u); return u; };
+const has = (R, x, y) => R.cost.has(y * R.w + x), costAt = (R, x, y) => R.cost.get(y * R.w + x);
+
+t('đồng phẳng: Mov 2 ra hình thoi 13 ô', () => { const M = mk(['.....', '.....', '.....', '.....', '.....']); const R = Core.reachable(M, put(M, 2, 2, { mov: 2 }), DATA); assert.strictEqual(R.stops.length, 13); assert.ok(!has(R, 0, 0)); });
+t('chi phí theo loại quân: rừng, núi', () => {
+  const M = mk(['.FFF.', '.MMM.']);
+  let R = Core.reachable(M, put(M, 0, 0, { mov: 4 }), DATA); assert.strictEqual(costAt(R, 2, 0), 4); assert.ok(!has(R, 3, 0));
+  M.units.length = 0; R = Core.reachable(M, put(M, 0, 0, { mov: 4, mt: 'nhe' }), DATA); assert.strictEqual(costAt(R, 4, 0), 4);
+  M.units.length = 0; R = Core.reachable(M, put(M, 0, 1, { mov: 3 }), DATA); assert.strictEqual(costAt(R, 1, 1), 3);
+  M.units.length = 0; R = Core.reachable(M, put(M, 0, 1, { mov: 3, mt: 'nhe' }), DATA); assert.strictEqual(costAt(R, 1, 1), 2);
+});
+t('nước: Bộ không vào nước sâu, Thủy chỉ ở nước/đầm, Bay qua mọi ô trừ vách', () => {
+  const M = mk(['.~WS.#.']);
+  let R = Core.reachable(M, put(M, 0, 0, { mov: 9 }), DATA); assert.ok(has(R, 1, 0) && !has(R, 2, 0));
+  M.units.length = 0; R = Core.reachable(M, put(M, 1, 0, { mov: 9, mt: 'thuy' }), DATA); eq(R.stops, [1, 2, 3]);
+  M.units.length = 0; R = Core.reachable(M, put(M, 0, 0, { mov: 9, mt: 'bay' }), DATA); assert.ok(has(R, 4, 0) && !has(R, 5, 0) && !has(R, 6, 0));
+});
+t('độ cao: chênh 1 leo được, chênh 2 bị chặn cả lên lẫn xuống', () => {
+  let M = mk(['...'], ['012']); assert.ok(has(Core.reachable(M, put(M, 0, 0, { mov: 5 }), DATA), 2, 0));
+  M = mk(['..'], ['02']); assert.ok(!has(Core.reachable(M, put(M, 0, 0, { mov: 5 }), DATA), 1, 0));
+  M.units.length = 0; assert.ok(!has(Core.reachable(M, put(M, 1, 0, { mov: 5 }), DATA), 0, 0));
+});
+t('độ cao: dốc ^ cho vượt chênh ≥ 2', () => {
+  const M = mk(['..', '^.'], ['03', '03']);
+  const R = Core.reachable(M, put(M, 0, 0, { mov: 6 }), DATA);
+  eq(Core.pathTo(R, 1, 0), [[0, 0], [0, 1], [1, 1], [1, 0]]);
+  assert.strictEqual(costAt(R, 1, 1), 5); // 1 (dốc) + 1 (đồng) + 3 bậc leo
+});
+t('chi phí leo: mỗi bậc lên +1, xuống không tốn, ghi đè được theo độ khó', () => {
+  const M = mk(['....'], ['0121']);
+  let R = Core.reachable(M, put(M, 0, 0, { mov: 9 }), DATA);
+  assert.strictEqual(costAt(R, 1, 0), 2); assert.strictEqual(costAt(R, 2, 0), 4); assert.strictEqual(costAt(R, 3, 0), 5);
+  R = Core.reachable(M, M.units[0], DATA, { climbCost: 0 }); assert.strictEqual(costAt(R, 2, 0), 2);
+  R = Core.reachable(M, M.units[0], DATA, { climbCost: 2 }); assert.strictEqual(costAt(R, 2, 0), 6);
+  M.units.length = 0; R = Core.reachable(M, put(M, 3, 0, { mov: 9 }), DATA); assert.strictEqual(costAt(R, 0, 0), 4); // 3→2 leo 1 bậc
+  M.units.length = 0; R = Core.reachable(M, put(M, 0, 0, { mov: 9, mt: 'bay' }), DATA); assert.strictEqual(costAt(R, 2, 0), 2);
+});
+t('NPC chặn cả ta lẫn địch; rương chặn mọi loại quân', () => {
+  const M = mk(['.....']); const me = put(M, 0, 0, { mov: 4 }); put(M, 2, 0, { side: 'npc' });
+  assert.ok(!has(Core.reachable(M, me, DATA), 3, 0));
+  M.units[0].side = 'dich'; assert.ok(!has(Core.reachable(M, me, DATA), 3, 0));
+  M.units.length = 0; M.chests.push({ x: 2, y: 0, item: 'thuoc_nho', open: false });
+  assert.ok(!has(Core.reachable(M, put(M, 0, 0, { mov: 4 }), DATA), 2, 0));
+  M.units.length = 0; assert.ok(!has(Core.reachable(M, put(M, 0, 0, { mov: 4, mt: 'bay' }), DATA), 2, 0));
+});
+t('độ cao: quân bay bỏ qua', () => { const M = mk(['..'], ['03']); assert.ok(has(Core.reachable(M, put(M, 0, 0, { mov: 1, mt: 'bay' }), DATA), 1, 0)); });
+t('xuyên quân ta nhưng không dừng chồng; không xuyên địch', () => {
+  const M = mk(['.....']); const me = put(M, 0, 0, { mov: 4 }); put(M, 1, 0);
+  let R = Core.reachable(M, me, DATA);
+  assert.ok(has(R, 4, 0)); assert.ok(!Core.canStopAt(R, 1, 0)); assert.ok(Core.canStopAt(R, 0, 0));
+  put(M, 2, 0, { side: 'dich' }); R = Core.reachable(M, me, DATA); assert.ok(!has(R, 2, 0) && !has(R, 3, 0));
+});
+t('đi vòng quanh địch; quân đã ngã không chặn', () => {
+  const M = mk(['...', '...']); const me = put(M, 0, 0, { mov: 4 }); const foe = put(M, 1, 0, { side: 'dich' });
+  assert.strictEqual(costAt(Core.reachable(M, me, DATA), 2, 0), 4);
+  foe.hp = 0; assert.strictEqual(costAt(Core.reachable(M, me, DATA), 2, 0), 2);
+});
+t('opts.mov ghi đè (Trói = 0)', () => { const M = mk(['...']); eq(Core.reachable(M, put(M, 1, 0), DATA, { mov: 0 }).stops, [1]); });
+t('map thử: vách núi góc Đông Nam chỉ lên được qua dốc', () => {
+  assert.ok(!Core.canStep(S, 8, 15, 9, 15, 'bo', DATA));     // đồng h0 → núi h2
+  assert.ok(Core.canStep(S, 9, 14, 10, 14, 'bo', DATA));     // dốc h1 → núi h2
+  assert.ok(Core.canStep(S, 8, 15, 9, 15, 'bay', DATA));
+  const R = Core.reachable(S, Core.unitAt(S, 1, 13), DATA);  // Đăng, Mov 5
+  assert.ok(R.stops.length > 10 && Core.pathTo(R, 1, 13).length === 1);
+});
 console.log(n + ' bài kiểm thử đạt');

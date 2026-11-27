@@ -1,0 +1,110 @@
+// ===== Vân Đăng · Logic lõi =====
+// Thuần dữ liệu: không dùng THREE, DOM hay biến của phần vẽ, để chạy được trong Node (tools/test_core.js).
+// Mọi thứ nằm trong một đối tượng Core để không đụng tên với các module khác khi build nối file.
+const Core = (() => {
+  const SIDES = { A: 'ta', E: 'dich', N: 'npc' };
+  const STAT_KEYS = ['hp', 'str', 'mag', 'skl', 'spd', 'lck', 'def', 'res', 'con', 'mov'];
+
+  // RNG có seed (mulberry32). Trả về hàm () => số trong [0,1); kèm .int(a,b) và .state() để lưu/phát lại.
+  function rng(seed) {
+    let s = seed >>> 0;
+    const f = () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    f.int = (a, b) => a + Math.floor(f() * (b - a + 1));
+    f.state = () => s;
+    return f;
+  }
+
+  function fail(errs, msg) { errs.push(msg); }
+
+  // Kiểm tra một map JSON thô. Trả về mảng lỗi (rỗng = hợp lệ).
+  function validateMap(m, data) {
+    const errs = [], T = data.terrain.tiles;
+    if (!Array.isArray(m.terrain) || !m.terrain.length) { fail(errs, 'thiếu lớp terrain'); return errs; }
+    const h = m.terrain.length, w = m.terrain[0].length;
+    if (w > 16 || h > 20) fail(errs, `map ${w}x${h} vượt tối đa 16x20`);
+    const layers = { terrain: m.terrain, height: m.height, units: m.units };
+    for (const k in layers) {
+      const L = layers[k];
+      if (L === undefined && k !== 'terrain') continue;
+      if (!Array.isArray(L) || L.length !== h) { fail(errs, `lớp ${k} phải có ${h} dòng`); continue; }
+      L.forEach((row, y) => { if (typeof row !== 'string' || row.length !== w) fail(errs, `lớp ${k} dòng ${y} phải dài ${w} ký tự`); });
+    }
+    m.terrain.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (!T[row[x]]) fail(errs, `ký hiệu địa hình lạ '${row[x]}' tại (${x},${y})`); });
+    if (Array.isArray(m.height)) m.height.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (!/[0-3]/.test(row[x])) fail(errs, `độ cao '${row[x]}' tại (${x},${y}) phải là 0–3`); });
+    if (Array.isArray(m.units)) {
+      const count = {};
+      m.units.forEach((row, y) => {
+        for (let x = 0; x < row.length; x++) {
+          const c = row[x]; if (c === '.') continue;
+          if (!'AENC'.includes(c)) { fail(errs, `ký hiệu quân lạ '${c}' tại (${x},${y})`); continue; }
+          count[c] = (count[c] || 0) + 1;
+          const t = m.terrain[y] && T[m.terrain[y][x]];
+          if (t && c !== 'C' && t.cost.bo === null && t.cost.bay === null) fail(errs, `quân '${c}' đứng trên ô không đi được tại (${x},${y})`);
+        }
+      });
+      const R = m.roster || {};
+      for (const c of 'AENC') {
+        const n = count[c] || 0, list = R[c] || [];
+        if (list.length !== n) fail(errs, `roster.${c} có ${list.length} mục nhưng map có ${n} ký hiệu '${c}'`);
+        if (c !== 'C') for (const id of list) if (!data.units.templates[id]) fail(errs, `roster.${c}: không có mẫu đơn vị '${id}'`);
+      }
+    }
+    return errs;
+  }
+
+  // Tạo một đơn vị từ mẫu. Chỉ số = bản sao stats của mẫu; hp hiện tại = hp tối đa.
+  function makeUnit(tplId, data, side, x, y, uid) {
+    const tpl = data.units.templates[tplId];
+    if (!tpl) throw new Error('không có mẫu đơn vị ' + tplId);
+    const stats = {}; for (const k of STAT_KEYS) stats[k] = tpl.stats[k] | 0;
+    return { uid, tpl: tplId, name: tpl.name, title: tpl.title || '', side, x, y, lv: tpl.lv || 1, exp: 0, moveType: tpl.moveType || 'bo', tags: (tpl.tags || []).slice(), stats, hp: stats.hp, done: false };
+  }
+
+  // Đọc map JSON thành trạng thái trận: lưới ô + danh sách quân + rương.
+  function loadMap(m, data) {
+    const errs = validateMap(m, data);
+    if (errs.length) throw new Error('Map "' + (m.id || '?') + '" lỗi:\n- ' + errs.join('\n- '));
+    const T = data.terrain.tiles, h = m.terrain.length, w = m.terrain[0].length;
+    const tiles = new Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const c = m.terrain[y][x];
+      tiles[y * w + x] = { x, y, c, id: T[c].id, h: m.height ? +m.height[y][x] : 0 };
+    }
+    const S = { id: m.id, name: m.name || m.id, biome: m.biome || 'ashen', w, h, tiles, units: [], chests: [], turn: 1, phase: 'ta' };
+    if (m.units) {
+      const next = { A: 0, E: 0, N: 0, C: 0 }; let uid = 1;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const c = m.units[y][x]; if (c === '.') continue;
+        const id = m.roster[c][next[c]++];
+        if (c === 'C') S.chests.push({ x, y, item: id, open: false });
+        else S.units.push(makeUnit(id, data, SIDES[c], x, y, uid++));
+      }
+    }
+    return S;
+  }
+
+  const inside = (S, x, y) => x >= 0 && y >= 0 && x < S.w && y < S.h;
+  const tile = (S, x, y) => inside(S, x, y) ? S.tiles[y * S.w + x] : null;
+  const terrainOf = (S, x, y, data) => { const t = tile(S, x, y); return t ? data.terrain.tiles[t.c] : null; };
+  // Chi phí bước vào ô (x,y) với loại quân; null = không vào được.
+  function moveCost(S, x, y, moveType, data) { const t = terrainOf(S, x, y, data); if (!t) return null; const c = t.cost[moveType]; return c === undefined ? null : c; }
+  const unitAt = (S, x, y) => S.units.find(u => u.x === x && u.y === y && u.hp > 0) || null;
+  const chestAt = (S, x, y) => S.chests.find(c => c.x === x && c.y === y) || null;
+
+  // Xuất lại 3 lớp ASCII (để kiểm tra vòng đọc→ghi và để lưu map đã sửa).
+  function toAscii(S) {
+    const terrain = [], height = [], units = [];
+    for (let y = 0; y < S.h; y++) {
+      let a = '', b = '', c = '';
+      for (let x = 0; x < S.w; x++) {
+        const t = tile(S, x, y); a += t.c; b += t.h;
+        const u = unitAt(S, x, y), k = chestAt(S, x, y);
+        c += u ? ({ ta: 'A', dich: 'E', npc: 'N' })[u.side] : k ? 'C' : '.';
+      }
+      terrain.push(a); height.push(b); units.push(c);
+    }
+    return { terrain, height, units };
+  }
+
+  return { rng, validateMap, loadMap, makeUnit, inside, tile, terrainOf, moveCost, unitAt, chestAt, toAscii, STAT_KEYS };
+})();

@@ -1,0 +1,18 @@
+{
+  "_doc": "Bảng địa hình theo GDD 3.1. cost: chi phí di chuyển theo loại quân (null = không đi được). avo = cộng Né, def = cộng Thủ. Giá trị khởi điểm, chỉnh ở tuần 2.",
+  "moveTypes": ["bo", "nhe", "bay", "thuy"],
+  "tiles": {
+    ".": { "id": "dong",      "name": "Đồng",       "cost": { "bo": 1,    "nhe": 1,    "bay": 1, "thuy": null }, "avo": 0,   "def": 0 },
+    "=": { "id": "duong",     "name": "Đường",      "cost": { "bo": 1,    "nhe": 1,    "bay": 1, "thuy": null }, "avo": 0,   "def": 0 },
+    "F": { "id": "rung",      "name": "Rừng",       "cost": { "bo": 2,    "nhe": 1,    "bay": 1, "thuy": null }, "avo": 20,  "def": 1, "flags": ["cheTamNhin", "dotDuoc"] },
+    "M": { "id": "nui",       "name": "Núi",        "cost": { "bo": 3,    "nhe": 2,    "bay": 1, "thuy": null }, "avo": 30,  "def": 1, "vision": 1 },
+    "~": { "id": "nuocNong",  "name": "Nước nông",  "cost": { "bo": 2,    "nhe": 2,    "bay": 1, "thuy": 1 },    "avo": -10, "def": 0, "flags": ["nuoc"] },
+    "W": { "id": "nuocSau",   "name": "Nước sâu",   "cost": { "bo": null, "nhe": null, "bay": 1, "thuy": 1 },    "avo": 0,   "def": 0, "flags": ["nuoc"] },
+    "B": { "id": "cau",       "name": "Cầu",        "cost": { "bo": 1,    "nhe": 1,    "bay": 1, "thuy": null }, "avo": 0,   "def": 0 },
+    "S": { "id": "damLay",    "name": "Đầm lầy",    "cost": { "bo": 3,    "nhe": 2,    "bay": 1, "thuy": 1 },    "avo": -10, "def": 0 },
+    "T": { "id": "thapDen",   "name": "Tháp đèn",   "cost": { "bo": 1,    "nhe": 1,    "bay": 1, "thuy": null }, "avo": 20,  "def": 2, "heal": 20, "flags": ["nguonSang"] },
+    "P": { "id": "mieu",      "name": "Miếu",       "cost": { "bo": 1,    "nhe": 1,    "bay": 1, "thuy": null }, "avo": 20,  "def": 2, "heal": 20 },
+    "#": { "id": "vach",      "name": "Vách",       "cost": { "bo": null, "nhe": null, "bay": null, "thuy": null }, "avo": 0, "def": 0, "flags": ["chanTamBan"] },
+    "^": { "id": "doc",       "name": "Dốc",        "cost": { "bo": 1,    "nhe": 1,    "bay": 1, "thuy": null }, "avo": 0,   "def": 0, "flags": ["doc"] }
+  }
+}

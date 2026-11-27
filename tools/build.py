@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import glob
+import json
 import os
 import sys
 
@@ -26,8 +27,21 @@ def three_classic():
     return out
 
 
+def data():
+    """Gom data/*.json và data/maps/*.json thành một hằng DATA nhúng vào bản build."""
+    d = {'maps': {}}
+    for path in sorted(glob.glob(os.path.join(ROOT, 'data', '*.json'))):
+        d[os.path.splitext(os.path.basename(path))[0]] = json.load(open(path, encoding='utf-8'))
+    for path in sorted(glob.glob(os.path.join(ROOT, 'data', 'maps', '*.json'))):
+        m = json.load(open(path, encoding='utf-8'))
+        d['maps'][m['id']] = m
+    out = json.dumps(d, ensure_ascii=False, separators=(',', ':'))
+    assert '</script' not in out
+    return 'const DATA = ' + out + ';'
+
+
 def game():
-    parts = []
+    parts = [data()]
     for path in sorted(glob.glob(os.path.join(ROOT, 'src', '*.js'))):
         parts.append(open(path, encoding='utf-8').read())
     code = "(function(){\n'use strict';\n" + '\n'.join(parts) + '\n})();'

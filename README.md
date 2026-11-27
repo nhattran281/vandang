@@ -12,7 +12,7 @@ Nền kỹ thuật fork từ [Cinderwatch](https://github.com/kevintngo/cinderwa
 - Dữ liệu dạng JSON trong `data/`, được nhúng vào bản build.
 - Logic lõi `src/34-core.js` tách khỏi phần vẽ, có test chạy bằng Node.
 - Map thử 12×16 hiển thị bằng đồ họa Cinderwatch: địa hình, độ cao, tháp đèn, miếu, cầu, quân ta/địch/NPC, rương. Chạm/nhấn một ô để xem thông số.
-- Tuần 2: tìm đường (`Core.reachable/pathTo/canStopAt`); chạm quân ta để tô vùng đi, chạm ô đích để xem đường, chạm lần nữa để đi; chạm ngoài vùng để hủy. Bàn phím: mũi tên + Enter, Esc để hủy.
+- Tuần 2: tìm đường (`Core.reachable/pathTo/canStopAt`); chạm quân ta để tô vùng đi, chạm ô đích để xem đường, chạm lần nữa để đi; chạm ngoài vùng để hủy. Đi xong chọn **Chờ** hoặc **Hoàn tác**; nút **Hết lượt**; vòng lượt Ta → Địch → NPC (máy tạm thời chỉ tiến về quân ta gần nhất). Bàn phím: mũi tên + Enter, Esc hủy/hoàn tác, E hết lượt.
 
 ## Chạy, build, test
 
@@ -41,7 +41,7 @@ CHROME=/usr/bin/google-chrome node tools/cdp.js "" 390,844 "tapat:__vd.screenOfT
 | `src/11-shared.js` | Phần dùng chung tách từ Cinderwatch: vật liệu, `Soup.seg`, `clothPanel`, thư viện đồ vật `PROP` |
 | `src/34-core.js` | **Logic lõi** (thuần dữ liệu): đọc/kiểm tra map, tạo đơn vị, tra ô, chi phí di chuyển, RNG có seed |
 | `src/35-board.js` | Vẽ bàn cờ ô vuông từ trạng thái map |
-| `src/36-play.js` | **Điều khiển lượt ta** (thuần dữ liệu): chọn quân → ô đích → đi, đánh dấu `done`, hoạt cảnh đi theo đường |
+| `src/36-play.js` | **Điều khiển lượt** (thuần dữ liệu): chọn quân → ô đích → đi → Chờ/Hoàn tác, `done`; vòng lượt Ta → Địch → NPC, nước đi tạm cho quân máy |
 | `src/56-overlay.js` | Tô vùng đi được (xanh = dừng được, tím = chỉ đi qua) và vẽ đường đi |
 | `src/55-units.js` | Vẽ đơn vị bằng rig người của Cinderwatch (tạm) |
 | `src/72-hud.js` | HUD tạm (font hệ thống, có dấu tiếng Việt) |

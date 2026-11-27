@@ -1405,39 +1405,53 @@ function makeTileCursor() {
   m.scale.setScalar(TS / 1.3); m.renderOrder = 4; m.visible = false; R.scene.add(m); return m;
 }
 
-// ===== Vân Đăng · Điều khiển lượt người chơi (chọn quân → chọn ô đích → đi) =====
+// ===== Vân Đăng · Điều khiển lượt (chọn quân → ô đích → đi → Chờ/Hoàn tác; vòng lượt Ta → Địch → NPC) =====
 // Thuần dữ liệu như 34-core: không dùng THREE/DOM, chạy được trong Node (tools/test_core.js).
-// Phần vẽ chỉ đọc P (mode, unit, R, target, path, anim) và P.ver để biết khi nào cần dựng lại lớp tô ô.
+// Phần vẽ chỉ đọc P (mode, unit, R, target, path, anim, banner) và P.ver để biết khi nào cần dựng lại lớp tô ô.
 //
-// Trạng thái P.mode:
+// P.mode (lượt ta):
 //   'cho'   chưa chọn quân nào
 //   'chon'  đã chọn quân ta, đang hiện vùng đi được (có thể kèm ô đích + đường đi)
-//   'di'    quân đang đi theo đường (bỏ qua mọi chạm cho tới khi xong)
+//   'di'    quân đang đi theo đường (bỏ qua chạm)
+//   'menu'  đã tới ô đích, chờ chọn hành động: Chờ / Hoàn tác (Đánh, Kỹ năng... thêm ở tuần 3)
+// P.mode = 'may': lượt Địch / NPC đang tự chạy.
+// S.phase: 'ta' | 'dich' | 'npc'. Hết lượt NPC thì sang lượt ta mới (S.turn + 1).
 const Play = (() => {
-  const STEP_TIME = .16; // giây cho mỗi ô khi đi (chỉ là nhịp hiển thị; logic đã chốt ngay khi ra lệnh)
+  const STEP_TIME = .16;   // giây mỗi ô khi đi (nhịp hiển thị; logic chốt ngay khi ra lệnh)
+  const BANNER_TIME = 1.1; // băng chữ đầu mỗi phe
+  const GAP_TIME = .18;    // nghỉ giữa hai quân máy
+  const ORDER = ['ta', 'dich', 'npc'], NAME = { ta: 'Phe ta', dich: 'Phe địch', npc: 'NPC' };
 
-  function create(S, data) { return { S, data, mode: 'cho', unit: null, R: null, target: null, path: null, anim: null, ver: 0 }; }
+  function create(S, data) {
+    const P = { S, data, mode: 'cho', unit: null, R: null, target: null, path: null, anim: null, undo: null, banner: null, queue: [], gap: 0, ver: 0 };
+    P.banner = { text: `Lượt ${S.turn} · ${NAME.ta}`, side: 'ta', t: 0, dur: BANNER_TIME };
+    return P;
+  }
 
   // Quân có nhận lệnh được không: quân ta, còn sống, chưa đi, đang lượt ta.
   const ready = (P, u) => !!(u && u.side === 'ta' && u.hp > 0 && !u.done && P.S.phase === 'ta');
+  const busy = P => !!(P.banner || P.anim || P.mode === 'may');
 
+  function clearSel(P) { P.mode = 'cho'; P.unit = null; P.R = null; P.target = null; P.path = null; P.undo = null; P.ver++; }
   function select(P, u) { P.mode = 'chon'; P.unit = u; P.R = Core.reachable(P.S, u, P.data); P.target = null; P.path = null; P.ver++; }
-  function cancel(P) { if (P.mode === 'di') return; P.mode = 'cho'; P.unit = null; P.R = null; P.target = null; P.path = null; P.ver++; }
+  function cancel(P) { if (P.mode === 'chon') clearSel(P); }
 
-  // Ra lệnh đi tới ô đích: chốt vị trí trong logic ngay, đánh dấu done, rồi chạy hoạt cảnh theo đường.
+  // Bắt đầu hoạt cảnh đi; vị trí trong logic chốt ngay.
+  function walk(P, u, path) {
+    const [x, y] = path[path.length - 1]; u.x = x; u.y = y;
+    P.anim = { u, path, t: 0, dur: Math.max(0, path.length - 1) * STEP_TIME };
+  }
+
+  // Ra lệnh đi tới ô đích; nhớ ô cũ để Hoàn tác. Đi xong sang 'menu'.
   function commit(P) {
-    const u = P.unit, path = P.path, [x, y] = path[path.length - 1];
-    u.x = x; u.y = y; u.done = true;
-    P.mode = 'di'; P.anim = { u, path, t: 0, dur: Math.max(0, path.length - 1) * STEP_TIME };
-    P.R = null; P.target = null; P.path = null; P.ver++;
+    const u = P.unit; P.undo = { u, x: u.x, y: u.y };
+    walk(P, u, P.path); P.mode = 'di'; P.R = null; P.target = null; P.path = null; P.ver++;
   }
 
   // Xử lý một lần chạm vào ô (x,y); (x,y) = null nghĩa là chạm ra ngoài bàn cờ.
-  // Trả về tên sự kiện để phần giao diện phản hồi:
-  //   'chon' chọn quân · 'dich' đặt ô đích, hiện đường · 'di' ra lệnh đi
-  //   'quaduoc' ô chỉ đi qua được, không dừng được · 'huy' hủy chọn · 'xem' chỉ xem ô · 'ban' đang bận (quân đang đi)
+  // Trả về: 'chon' · 'dich' (đặt ô đích) · 'di' (ra lệnh đi) · 'quaduoc' (ô chỉ đi qua) · 'huy' · 'xem' · 'ban' (đang bận / đang ở menu)
   function tap(P, x, y) {
-    if (P.mode === 'di') return 'ban';
+    if (busy(P) || P.mode === 'menu' || P.S.phase !== 'ta') return 'ban';
     const S = P.S, onMap = x !== null && x !== undefined && Core.inside(S, x, y), u = onMap ? Core.unitAt(S, x, y) : null;
     if (P.mode === 'chon') {
       if (!onMap) { cancel(P); return 'huy'; }
@@ -1453,15 +1467,76 @@ const Play = (() => {
     return 'xem';
   }
 
-  // Chạy hoạt cảnh đi. Hết đường thì về trạng thái chờ.
-  function update(P, dt) {
-    const a = P.anim; if (!a) return;
-    a.t += dt;
-    if (a.t >= a.dur) { P.anim = null; P.mode = 'cho'; P.unit = null; P.ver++; }
+  // ----- Menu sau khi đi -----
+  // Chờ: kết thúc hành động của quân này. Hết quân ta chưa đi thì tự kết thúc lượt.
+  function wait(P) {
+    if (P.mode !== 'menu') return false;
+    P.unit.done = true; clearSel(P);
+    if (!left(P)) endTurn(P);
+    return true;
+  }
+  // Hoàn tác: về ô cũ, chọn lại quân đó (như lúc vừa chạm vào nó).
+  function undo(P) {
+    if (P.mode !== 'menu' || !P.undo) return false;
+    const { u, x, y } = P.undo; u.x = x; u.y = y; P.undo = null; select(P, u);
+    return true;
   }
 
-  // Vị trí đang hiển thị của quân u: {x, y} theo ô (số thực) + hướng bước (dx, dy) + k (0..1 trong ô hiện tại).
-  // Trả về null nếu quân không đang đi.
+  // ----- Vòng lượt -----
+  function endTurn(P) {
+    if (P.S.phase !== 'ta' || busy(P) || P.mode === 'menu') return false;
+    clearSel(P); startPhase(P, 'dich'); return true;
+  }
+  function startPhase(P, side) {
+    const S = P.S;
+    if (side === 'ta') { S.turn++; for (const u of S.units) u.done = false; }
+    else for (const u of S.units) if (u.side === side) u.done = false;
+    S.phase = side; P.ver++;
+    const units = S.units.filter(u => u.side === side && u.hp > 0);
+    if (side !== 'ta' && !units.length) return startPhase(P, ORDER[(ORDER.indexOf(side) + 1) % 3]); // phe trống: bỏ qua
+    P.banner = { text: side === 'ta' ? `Lượt ${S.turn} · ${NAME.ta}` : NAME[side], side, t: 0, dur: BANNER_TIME };
+    P.mode = side === 'ta' ? 'cho' : 'may'; P.queue = side === 'ta' ? [] : units.map(u => u.uid); P.gap = 0;
+  }
+
+  // Nước đi tạm cho quân máy (tới tuần 4 thay bằng AI chấm điểm):
+  // tìm ô kề quân ta gần nhất theo chi phí đi thật, rồi đi xa nhất có thể dọc đường đó trong tầm Di chuyển.
+  // Tất định: hòa thì lấy ô có chỉ số nhỏ hơn.
+  function planMove(S, u, data) {
+    const far = Core.reachable(S, u, data, { mov: 999 }), mov = u.stats.mov, foes = S.units.filter(o => o.side === 'ta' && o.hp > 0);
+    let goal = -1, best = Infinity;
+    for (const i of far.stops) {
+      const x = i % S.w, y = (i / S.w) | 0;
+      if (!foes.some(f => Math.abs(f.x - x) + Math.abs(f.y - y) === 1)) continue;
+      const c = far.cost.get(i); if (c < best) { best = c; goal = i; }
+    }
+    if (goal < 0) return null;
+    const path = Core.pathTo(far, goal % S.w, (goal / S.w) | 0);
+    let end = 0; // ô xa nhất trong tầm mà dừng được
+    for (let k = 0; k < path.length; k++) { const [x, y] = path[k]; if (far.cost.get(y * S.w + x) > mov) break; if (Core.canStopAt(far, x, y)) end = k; }
+    return end > 0 ? path.slice(0, end + 1) : null;
+  }
+
+  function update(P, dt) {
+    if (P.banner) { P.banner.t += dt; if (P.banner.t >= P.banner.dur) { P.banner = null; P.ver++; } return; }
+    const a = P.anim;
+    if (a) {
+      a.t += dt; if (a.t < a.dur) return;
+      P.anim = null; P.ver++;
+      if (P.S.phase === 'ta') P.mode = 'menu'; else P.gap = GAP_TIME;
+      return;
+    }
+    if (P.mode !== 'may') return;
+    if (P.gap > 0) { P.gap -= dt; return; }
+    const S = P.S;
+    while (P.queue.length) {
+      const id = P.queue.shift(), u = S.units.find(o => o.uid === id); if (!u || u.hp <= 0) continue;
+      u.done = true; const path = planMove(S, u, P.data);
+      if (path) { walk(P, u, path); P.ver++; return; }
+    }
+    startPhase(P, ORDER[(ORDER.indexOf(S.phase) + 1) % 3]);
+  }
+
+  // Vị trí đang hiển thị của quân u khi đi: nội suy giữa hai ô. null nếu quân không đang đi.
   function animPos(P, u) {
     const a = P.anim; if (!a || a.u !== u || a.path.length < 2) return null;
     const f = Math.min(a.t / STEP_TIME, a.path.length - 1 - 1e-6), i = Math.floor(f), k = f - i;
@@ -1471,7 +1546,7 @@ const Play = (() => {
 
   const left = P => P.S.units.filter(u => ready(P, u)).length;
 
-  return { create, ready, select, cancel, tap, update, animPos, left, STEP_TIME };
+  return { create, ready, busy, select, cancel, tap, wait, undo, endTurn, update, animPos, left, planMove, STEP_TIME };
 })();
 
 
@@ -2946,7 +3021,7 @@ const PX = (() => {
 // Chữ vẽ lên canvas #hud bằng font hệ thống (font pixel 70-pixelfont chưa có dấu tiếng Việt).
 // Bản tuần 1: tên map, thông tin ô đang chọn. UI chiến thuật thật làm từ tuần 2–3.
 const HUD = {
-  ctx: null,
+  ctx: null, btns: [],
   init() { this.ctx = document.getElementById('hud').getContext('2d'); },
   panel(c, x, y, w, h) { c.fillStyle = 'rgba(8,10,16,.72)'; c.fillRect(x, y, w, h); c.strokeStyle = 'rgba(232,176,74,.55)'; c.lineWidth = Math.max(1, R.dpr); c.strokeRect(x + .5, y + .5, w - 1, h - 1); },
   draw() {
@@ -2955,21 +3030,61 @@ const HUD = {
     c.clearRect(0, 0, W, H);
     c.textBaseline = 'top';
     const S = G.map; if (!S) return;
+    this.btns = [];
     c.font = `600 ${fs * 1.15}px system-ui, sans-serif`; c.fillStyle = '#e8b04a';
     c.fillText('Vân Đăng · ' + S.name, sl + pad, st + pad);
     c.font = `400 ${fs * .8}px system-ui, sans-serif`; c.fillStyle = 'rgba(200,190,170,.8)';
     c.fillText(this.hint(), sl + pad, st + pad + fs * 1.5);
     if (HASH.fps && R.fpsText) c.fillText(R.fpsText, sl + pad, st + pad + fs * 2.7);
-    const sel = G.sel; if (!sel) return;
-    const lines = this.describe(S, sel.x, sel.y);
-    const lh = fs * 1.35, bw = Math.min(W - sl - sr - pad * 2, 420 * d), bh = lines.length * lh + pad * 1.2, bx = sl + pad, by = H - sb - pad - bh;
-    this.panel(c, bx, by, bw, bh);
-    lines.forEach((l, i) => { c.font = `${i === 0 ? 600 : 400} ${fs}px system-ui, sans-serif`; c.fillStyle = i === 0 ? '#ffd27a' : '#e6dccb'; c.fillText(l, bx + pad * .8, by + pad * .6 + i * lh); });
+    const P = G.play;
+    // Nút Hết lượt (góc trên phải): khi đang lượt ta và không ở giữa một nước đi
+    if (S.phase === 'ta' && !Play.busy(P) && P.mode !== 'menu') this.button(c, 'Hết lượt', 'hetluot', W - sr - pad - 104 * d, st + pad, 104 * d, 44 * d, false);
+    let top = H - sb - pad; // mép trên của khối dưới cùng
+    const sel = G.sel;
+    if (sel) {
+      const lines = this.describe(S, sel.x, sel.y);
+      const lh = fs * 1.35, bw = Math.min(W - sl - sr - pad * 2, 420 * d), bh = lines.length * lh + pad * 1.2, bx = sl + pad, by = H - sb - pad - bh;
+      this.panel(c, bx, by, bw, bh); top = by;
+      lines.forEach((l, i) => { c.font = `${i === 0 ? 600 : 400} ${fs}px system-ui, sans-serif`; c.fillStyle = i === 0 ? '#ffd27a' : '#e6dccb'; c.fillText(l, bx + pad * .8, by + pad * .6 + i * lh); });
+    }
+    // Menu hành động sau khi đi (tuần 3 thêm Đánh / Kỹ năng / Vật phẩm / Mở rương...)
+    if (P.mode === 'menu' && !P.anim) {
+      const bw = 118 * d, bh = 50 * d, y = top - pad - bh, x2 = W - sr - pad - bw, x1 = x2 - pad - bw;
+      this.button(c, 'Hoàn tác', 'hoantac', x1, y, bw, bh, false);
+      this.button(c, 'Chờ', 'cho', x2, y, bw, bh, true);
+    }
+    if (P.banner) this.banner(c, P.banner, W, H, d);
+  },
+  button(c, label, act, x, y, w, h, main) {
+    const d = R.dpr;
+    c.fillStyle = main ? 'rgba(232,176,74,.92)' : 'rgba(8,10,16,.8)'; c.fillRect(x, y, w, h);
+    c.strokeStyle = 'rgba(232,176,74,.85)'; c.lineWidth = Math.max(1, d * 1.2); c.strokeRect(x + .5, y + .5, w - 1, h - 1);
+    c.font = `600 ${16 * d}px system-ui, sans-serif`; c.fillStyle = main ? '#1a1208' : '#ffd27a'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(label, x + w / 2, y + h / 2 + d); c.textAlign = 'left'; c.textBaseline = 'top';
+    this.btns.push({ x, y, w, h, act });
+  },
+  // Băng chữ đầu mỗi phe: hiện dần, đứng, tắt dần
+  banner(c, b, W, H, d) {
+    const k = b.t / b.dur, a = Math.min(1, k * 6, (1 - k) * 5); if (a <= 0) return;
+    const col = { ta: '90,150,255', dich: '220,80,60', npc: '120,190,110' }[b.side], h = 64 * d, y = H * .38;
+    c.globalAlpha = a;
+    c.fillStyle = 'rgba(8,10,16,.78)'; c.fillRect(0, y, W, h);
+    c.fillStyle = `rgba(${col},.9)`; c.fillRect(0, y, W, 2 * d); c.fillRect(0, y + h - 2 * d, W, 2 * d);
+    c.font = `700 ${24 * d}px system-ui, sans-serif`; c.fillStyle = '#f2e6cc'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(b.text, W / 2, y + h / 2); c.textAlign = 'left'; c.textBaseline = 'top'; c.globalAlpha = 1;
+  },
+  // Chạm vào nút nào (toạ độ CSS px) → tên hành động hoặc null
+  hit(cssX, cssY) {
+    const k = R.dw / R.cssW, x = cssX * k, y = cssY * k;
+    const b = this.btns.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h); return b ? b.act : null;
   },
   // Dòng gợi ý theo trạng thái chọn/đi (Play)
   hint() {
     const P = G.play, n = Play.left(P);
+    if (P.banner) return '';
+    if (P.mode === 'may') return (P.S.phase === 'npc' ? 'NPC' : 'Phe địch') + ' đang đi…';
     if (P.mode === 'di') return 'Đang đi…';
+    if (P.mode === 'menu') return 'Chọn: Chờ (kết thúc) hoặc Hoàn tác (về ô cũ)';
     if (P.mode === 'chon') return P.target ? 'Chạm lần nữa để đi · chạm ngoài vùng để hủy' : G.last === 'quaduoc' ? 'Ô tím: chỉ đi qua, không dừng được' : 'Chạm ô xanh để xem đường · ngoài vùng để hủy';
     return n ? `Lượt ${P.S.turn} · còn ${n} quân chưa đi · chạm quân ta để chọn` : `Lượt ${P.S.turn} · quân ta đã đi hết`;
   },
@@ -3679,9 +3794,17 @@ function selectTile(p) { G.sel = p && Core.inside(G.map, p.x, p.y) ? { x: p.x, y
 function tapTile(p) {
   const P = G.play, ev = G.last = Play.tap(P, p ? p.x : null, p ? p.y : null);
   if (ev === 'chon') selectTile({ x: P.unit.x, y: P.unit.y });
-  else if (ev === 'dich' || ev === 'xem' || ev === 'quaduoc') selectTile(p);
-  else if (ev === 'huy' || ev === 'di') G.sel = null;
+  else if (ev === 'dich' || ev === 'xem' || ev === 'quaduoc' || ev === 'di') selectTile(p);
+  else if (ev === 'huy') G.sel = null;
   return ev;
+}
+// Nút HUD: Chờ / Hoàn tác / Hết lượt
+function hudAction(act) {
+  const P = G.play; let ok = false;
+  if (act === 'cho') { ok = Play.wait(P); if (ok) G.sel = null; }
+  else if (act === 'hoantac') { ok = Play.undo(P); if (ok) selectTile({ x: P.unit.x, y: P.unit.y }); }
+  else if (act === 'hetluot') { ok = Play.endTurn(P); if (ok) G.sel = null; }
+  G.last = act; return ok;
 }
 
 function initInput() {
@@ -3696,12 +3819,15 @@ function initInput() {
     }
     p.x = e.clientX; p.y = e.clientY;
   });
-  const up = e => { const p = pts.get(e.pointerId); if (!p) return; pts.delete(e.pointerId); if (!drag && !pinch && pts.size === 0) tapTile(pickTile(e.clientX, e.clientY)); if (pts.size === 0) pinch = 0; };
+  const up = e => { const p = pts.get(e.pointerId); if (!p) return; pts.delete(e.pointerId); if (!drag && !pinch && pts.size === 0) { const act = HUD.hit(e.clientX, e.clientY); if (act) hudAction(act); else tapTile(pickTile(e.clientX, e.clientY)); } if (pts.size === 0) pinch = 0; };
   el.addEventListener('pointerup', up); el.addEventListener('pointercancel', e => { pts.delete(e.pointerId); drag = 1; });
   el.addEventListener('wheel', e => { e.preventDefault(); camZoomAt(Math.exp(-e.deltaY * .0015), e.clientX * R.dpr, e.clientY * R.dpr); }, { passive: false });
   window.addEventListener('keydown', e => {
     const s = G.sel; let m = null;
-    if (e.key === 'Escape') { Play.cancel(G.play); G.sel = null; }
+    const P = G.play;
+    if (P.mode === 'menu') { if (e.key === 'Enter' || e.key === ' ') hudAction('cho'); else if (e.key === 'Escape' || e.key === 'Backspace') hudAction('hoantac'); return; }
+    if (e.key === 'Escape') { Play.cancel(P); G.sel = null; }
+    else if (e.key === 'e' || e.key === 'E') hudAction('hetluot');
     else if (e.key === 'Enter' || e.key === ' ') tapTile(s);
     else if (e.key === 'f' || e.key === 'F' || e.key === '0') camReset();
     else if (e.key === 'ArrowUp' || e.key === 'w') m = [0, -1]; else if (e.key === 'ArrowDown' || e.key === 's') m = [0, 1];
@@ -3768,7 +3894,7 @@ function boot() {
   R.canvas.addEventListener('webglcontextrestored', () => location.reload());
   document.addEventListener('visibilitychange', () => { if (!document.hidden) _last = performance.now(); });
   // Móc cho công cụ (tools/cdp.js, tools/record.js): __vd, giữ tên cũ __cw để công cụ Cinderwatch vẫn chạy.
-  window.__vd = window.__cw = { G, R, CAM, LT, FX, Core, Play, OVL, DATA, step, pickTile, screenOfTile, selectTile, tapTile, tick(dt, render) { R.frameDt = dt; step(dt); R.fade = 1; applyCamera(); if (render) renderFrame(); HUD.draw(); } };
+  window.__vd = window.__cw = { G, R, CAM, LT, FX, Core, Play, OVL, DATA, step, pickTile, screenOfTile, selectTile, tapTile, hudAction, HUD, tick(dt, render) { R.frameDt = dt; step(dt); R.fade = 1; applyCamera(); if (render) renderFrame(); HUD.draw(); } };
   if (HASH.sel) { const [x, y] = HASH.sel.split(',').map(Number); selectTile({ x, y }); }
   if (HASH.ff) { const n = Math.round(+HASH.ff * 30); for (let i = 0; i < n; i++) step(1 / 30); R.fade = 1; }
   if (HASH.cam) window.__vd.lock = HASH.cam.split(',').map(Number);

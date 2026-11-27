@@ -120,7 +120,8 @@ const Core = (() => {
   // Vùng đi được của đơn vị u trong tầm Di chuyển (Dijkstra).
   // - Đi xuyên quân cùng phe (opts.passSides, mặc định [u.side]); không xuyên phe khác.
   //   NPC là một phe riêng: ta và địch đều không xuyên qua NPC.
-  // - Rương chặn đường với mọi loại quân (mở rương từ ô kề bên).
+  // - Vật trên mặt đất (rương): chặn quân đi đất/bơi; quân bay bay qua được nhưng không đậu xuống.
+  //   Mở rương từ ô kề bên.
   // - Không được dừng trên ô có quân khác.
   // opts.mov ghi đè tầm di chuyển (Trói = 0, buff +1...); opts.climbCost ghi đè chi phí leo.
   // Trả về { w, start, cost: Map(idx→chi phí), prev: Map(idx→idx), stops: [idx...] }, idx = y*w+x.
@@ -128,9 +129,9 @@ const Core = (() => {
     opts = opts || {};
     const mov = opts.mov !== undefined ? opts.mov : u.stats.mov;
     const pass = opts.passSides || [u.side];
-    const occ = new Map(), blocked = new Set();
+    const occ = new Map(), ground = new Set(), flying = u.moveType === 'bay';
     for (const o of S.units) if (o !== u && o.hp > 0) occ.set(o.y * S.w + o.x, o);
-    for (const c of S.chests) blocked.add(c.y * S.w + c.x);
+    for (const c of S.chests) ground.add(c.y * S.w + c.x);
     const start = u.y * S.w + u.x;
     const cost = new Map([[start, 0]]), prev = new Map(), open = [start];
     while (open.length) {
@@ -142,7 +143,7 @@ const Core = (() => {
       const cur = open.splice(bi, 1)[0], cx = cur % S.w, cy = (cur / S.w) | 0, cc = cost.get(cur);
       for (const [dx, dy] of DIRS) {
         const nx = cx + dx, ny = cy + dy, ni = ny * S.w + nx;
-        if (!inside(S, nx, ny) || blocked.has(ni)) continue;
+        if (!inside(S, nx, ny) || (ground.has(ni) && !flying)) continue;
         const step = stepCost(S, cx, cy, nx, ny, u.moveType, data, opts);
         if (step === null || cc + step > mov) continue;
         const o = occ.get(ni);
@@ -153,7 +154,7 @@ const Core = (() => {
         }
       }
     }
-    const stops = [...cost.keys()].filter(i => i === start || !occ.has(i)).sort((a, b) => a - b);
+    const stops = [...cost.keys()].filter(i => i === start || (!occ.has(i) && !ground.has(i))).sort((a, b) => a - b);
     return { w: S.w, start, cost, prev, stops };
   }
 

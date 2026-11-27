@@ -71,13 +71,14 @@ t('chi phí leo: mỗi bậc lên +1, xuống không tốn, ghi đè được th
   M.units.length = 0; R = Core.reachable(M, put(M, 3, 0, { mov: 9 }), DATA); assert.strictEqual(costAt(R, 0, 0), 4); // 3→2 leo 1 bậc
   M.units.length = 0; R = Core.reachable(M, put(M, 0, 0, { mov: 9, mt: 'bay' }), DATA); assert.strictEqual(costAt(R, 2, 0), 2);
 });
-t('NPC chặn cả ta lẫn địch; rương chặn mọi loại quân', () => {
+t('NPC chặn cả ta lẫn địch; rương chặn quân đi đất, quân bay bay qua nhưng không đậu', () => {
   const M = mk(['.....']); const me = put(M, 0, 0, { mov: 4 }); put(M, 2, 0, { side: 'npc' });
   assert.ok(!has(Core.reachable(M, me, DATA), 3, 0));
   M.units[0].side = 'dich'; assert.ok(!has(Core.reachable(M, me, DATA), 3, 0));
   M.units.length = 0; M.chests.push({ x: 2, y: 0, item: 'thuoc_nho', open: false });
   assert.ok(!has(Core.reachable(M, put(M, 0, 0, { mov: 4 }), DATA), 2, 0));
-  M.units.length = 0; assert.ok(!has(Core.reachable(M, put(M, 0, 0, { mov: 4, mt: 'bay' }), DATA), 2, 0));
+  M.units.length = 0; const R = Core.reachable(M, put(M, 0, 0, { mov: 4, mt: 'bay' }), DATA);
+  assert.ok(has(R, 3, 0) && has(R, 2, 0)); assert.ok(!Core.canStopAt(R, 2, 0));
 });
 t('độ cao: quân bay bỏ qua', () => { const M = mk(['..'], ['03']); assert.ok(has(Core.reachable(M, put(M, 0, 0, { mov: 1, mt: 'bay' }), DATA), 1, 0)); });
 t('xuyên quân ta nhưng không dừng chồng; không xuyên địch', () => {

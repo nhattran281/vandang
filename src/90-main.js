@@ -57,6 +57,9 @@ const G = { t: 0, phase: 'play', paused: false, speed: 1, map: null, B: null, se
 // Lưu game (tuần 5, 39-save): G.store = nơi lưu; G.campaign = chiến dịch đang chơi (null khi chạy map thử #map=…).
 // G.title = màn chính (Tiếp tục / Chơi mới) đang mở; G.ended = đã xử lý kết thúc trận; G.toast = thông báo ngắn.
 Object.assign(G, { store: null, campaign: null, title: null, ended: false, toast: null });
+// Chương (tuần 5 mục 4): G.chapter = chương đang chơi (data/chapters.json); G.intro = màn chương { ch, i } (i = câu hội thoại đang hiện);
+// G.outro = hội thoại kết sau khi thắng { lines, i }. Luồng: màn chính → màn chương → trận → kết quả (+ hội thoại kết) → lưu → Chương sau.
+Object.assign(G, { chapter: null, intro: null, outro: null });
 
 // Tải lại trang để dựng bàn cờ của chương khác (đơn giản và chắc hơn gỡ/dựng lại cảnh three.js). go = vào thẳng trận, bỏ màn chính.
 function relaunch(go) { try { location.hash = go ? 'go=1' : ''; location.reload(); } catch (e) {} }
@@ -74,9 +77,13 @@ function newGame(mode) {
 function onBattleEnd(over) {
   if (!G.campaign || !over.win) return;
   const C = G.campaign = Save.finishChapter(G.campaign, G.map, DATA);
-  G.store.clear('suspend'); const w = G.store.saveChapter(C);
-  over.reason = w.ok ? (C.done ? 'Đã hết chiến dịch · Đèn lồng: ' + Save.lanterns(C) : 'Đã lưu sau chương') : w.error;
+  G.store.clear('suspend'); const w = G.store.saveChapter(C), next = Save.chapterOf(C, DATA);
+  over.saved = w.ok ? (C.done ? 'Đã lưu · Hết chiến dịch · Đèn lồng: ' + Save.lanterns(C) : 'Đã lưu · Tiếp: ' + (next.name || next.id)) : w.error;
+  const lines = (G.chapter && G.chapter.outro) || [];
+  if (lines.length) G.outro = { lines, i: 0 };
 }
+// Màn chương → vào trận: băng chữ đầu trận hiện tên chương + mục tiêu.
+function startBattle() { G.intro = null; const b = G.play.banner; if (b) b.t = 0; }
 
 // Từ toạ độ màn hình (CSS px) ra ô map: chiếu tia camera xuống mặt phẳng, tinh chỉnh theo độ cao ô.
 const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _pl = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), _hit = new THREE.Vector3();
@@ -102,11 +109,18 @@ function tapTile(p) {
 function hudAction(act) {
   const P = G.play; let ok = false;
   if (G.title) {   // màn chính: chỉ các nút của nó
-    if (act === 'tieptuc' && G.title.hasSave) { G.title = null; ok = true; }
+    if (act === 'tieptuc' && G.title.hasSave) { G.title = null; if (!G.title_resumed && G.chapter) G.intro = { ch: G.chapter, i: 0 }; ok = true; }
     else if (act === 'moi_casual' || act === 'moi_classic') ok = newGame(act === 'moi_casual' ? 'casual' : 'classic');
     G.last = act; return ok;
   }
-  if (act === 'luutam') { if (G.campaign && Play.canSuspend(P)) { const w = G.store.saveSuspend(G.campaign, P); toast(w.ok ? 'Đã lưu tạm' : w.error); ok = w.ok; } }
+  if (G.intro) {   // màn chương: Tiếp (câu sau; hết câu thì vào trận) · Vào trận / Bỏ qua
+    if (act === 'tiep') { if (++G.intro.i >= (G.intro.ch.intro || []).length) startBattle(); ok = true; }
+    else if (act === 'vaotran') { startBattle(); ok = true; }
+    G.last = act; return ok;
+  }
+  if (act === 'tiep_ket' && G.outro) { G.outro.i++; ok = true; }
+  else if (act === 'boqua_ket' && G.outro) { G.outro.i = G.outro.lines.length; ok = true; }
+  else if (act === 'luutam') { if (G.campaign && Play.canSuspend(P)) { const w = G.store.saveSuspend(G.campaign, P); toast(w.ok ? 'Đã lưu tạm' : w.error); ok = w.ok; } }
   else if (act === 'chuongsau' || act === 'choilai') { if (act === 'choilai') G.store.clear('suspend'); relaunch(true); ok = true; }
   else if (act === 'manchinh') { relaunch(false); ok = true; }
   else if (act === 'cho') { ok = Play.wait(P); if (ok) G.sel = null; }
@@ -132,13 +146,15 @@ function initInput() {
     }
     p.x = e.clientX; p.y = e.clientY;
   });
-  const up = e => { const p = pts.get(e.pointerId); if (!p) return; pts.delete(e.pointerId); if (!drag && !pinch && pts.size === 0) { const act = HUD.hit(e.clientX, e.clientY); if (act) hudAction(act); else if (!G.title) tapTile(pickTile(e.clientX, e.clientY)); } if (pts.size === 0) pinch = 0; };
+  const up = e => { const p = pts.get(e.pointerId); if (!p) return; pts.delete(e.pointerId); if (!drag && !pinch && pts.size === 0) { const act = HUD.hit(e.clientX, e.clientY); if (act) hudAction(act); else if (G.intro) hudAction('tiep'); else if (G.outro && G.play.over) hudAction('tiep_ket'); else if (!G.title) tapTile(pickTile(e.clientX, e.clientY)); } if (pts.size === 0) pinch = 0; };
   el.addEventListener('pointerup', up); el.addEventListener('pointercancel', e => { pts.delete(e.pointerId); drag = 1; });
   el.addEventListener('wheel', e => { e.preventDefault(); camZoomAt(Math.exp(-e.deltaY * .0015), e.clientX * R.dpr, e.clientY * R.dpr); }, { passive: false });
   window.addEventListener('keydown', e => {
     const s = G.sel; let m = null;
     const P = G.play;
     if (G.title) return;
+    if (G.intro) { if (e.key === 'Escape') hudAction('vaotran'); else if (e.key === 'Enter' || e.key === ' ') hudAction('tiep'); return; }
+    if (P.over) { if (G.outro && (e.key === 'Enter' || e.key === ' ')) hudAction('tiep_ket'); else if (G.outro && e.key === 'Escape') hudAction('boqua_ket'); return; }
     if (P.levelUp) { hudAction('lencap'); return; }
     if (P.mode === 'menu') { if (e.key === 'Enter' || e.key === ' ') hudAction('cho'); else if (e.key === 'Escape' || e.key === 'Backspace') hudAction('hoantac'); else if (e.key === 'x' || e.key === 'X') hudAction('danh'); return; }
     if (P.mode === 'muctieu') { if (e.key === 'Escape' || e.key === 'Backspace') hudAction('quaylai'); else if (P.fc && (e.key === 'Enter' || e.key === ' ')) hudAction('xacnhan'); else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') hudAction(e.key === 'ArrowLeft' ? 'vukhitruoc' : 'vukhisau'); else if (e.key === 'Tab') { e.preventDefault(); const l = P.targets, i = (l.indexOf(P.foe) + 1) % l.length; Play.aim(P, l[i]); selectTile(l[i]); } return; }
@@ -156,7 +172,7 @@ function step(dt) {
   G.t += dt; SH.uTime.value = G.t;
   beginParts();
   updateFX(dt, G.t);
-  if (!G.title) Play.update(G.play, dt);
+  if (!G.title && !G.intro) Play.update(G.play, dt);
   if (G.play.over && !G.ended) { G.ended = true; onBattleEnd(G.play.over); }
   if (G.toast && (G.toast.t += dt) >= G.toast.dur) G.toast = null;
   drawUnits(G.map, G.t, G.play);
@@ -203,12 +219,20 @@ function boot() {
   if (HASH.map) {
     const raw = DATA.maps[HASH.map]; if (!raw) throw new Error('không có map ' + HASH.map);
     S = Core.loadMap(raw, DATA);
+  } else if (HASH.ch) {
+    // Chạy thẳng một chương (công cụ chụp/thử): chiến dịch mới trong bộ nhớ tạm, không đụng bản lưu thật.
+    const i = Save.chapters(DATA).findIndex(c => c.id === HASH.ch); if (i < 0) throw new Error('không có chương ' + HASH.ch);
+    G.store = Save.store(Save.memory(), DATA);
+    const C = Object.assign(Save.newCampaign(DATA, { seed }), { chapter: i }), st = Save.begin(Save.envChapter(C), DATA);
+    G.campaign = C; S = st.S; seed = st.rng; G.chapter = st.chapter;
+    if (!HASH.skip) G.intro = { ch: G.chapter, i: 0 };
   } else {
     const r = G.store.resume(), usable = r.ok && !r.done;
     const C = usable ? r.C : Save.newCampaign(DATA), st = usable ? r : Save.begin(Save.envChapter(C), DATA);
-    G.campaign = C; S = st.S; seed = st.rng;
+    G.campaign = C; S = st.S; seed = st.rng; G.chapter = st.chapter || null; G.title_resumed = !!(usable && r.resumed);
     const errors = r.errors || [];
     G.title = HASH.go && usable ? null : { hasSave: usable, resumed: usable && r.resumed, done: !!(r.ok && r.done), lanterns: r.ok && r.done ? Save.lanterns(r.C) : 0, errors, confirm: null };
+    if (!G.title && !G.title_resumed && G.chapter) G.intro = { ch: G.chapter, i: 0 };   // vào chương mới (Chơi mới / Chương sau): màn chương trước
     if (HASH.go) try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   }
   G.map = S;
@@ -217,7 +241,9 @@ function boot() {
   R.scene.add(B.group); activateGridBoard(B);
   G.play = Play.create(S, DATA, seed);
   if (S.chapterName) G.play.banner.text = S.chapterName + ' · Lượt ' + S.turn;
+  if (S.goal) { G.play.banner.sub = 'Mục tiêu: ' + Core.goalText(S.goal, DATA).win; G.play.banner.dur = 2.6; }
   if (S.mode === 'deadzone') { G.play.banner.sub = 'Vùng Chết · quân ngã sẽ chết vĩnh viễn'; G.play.banner.dur = 2.6; }
+  if (G.title || G.intro) G.play.banner.t = 0;
   initUnitViews(S); initOverlay(); G.cursor = makeTileCursor(); initInput();
   window.addEventListener('resize', resizeRenderer);
   window.addEventListener('orientationchange', () => setTimeout(resizeRenderer, 120));

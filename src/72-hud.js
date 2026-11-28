@@ -18,10 +18,23 @@ const HUD = {
     c.fillText('Vân Đăng · ' + S.name, sl + pad, st + pad);
     c.font = `400 ${fs * .8}px system-ui, sans-serif`; c.fillStyle = 'rgba(200,190,170,.8)';
     // Gợi ý không được đè nút Hết lượt (góc trên phải, rộng 104): ép chữ vào bề rộng còn lại.
-    c.fillText(this.hint(), sl + pad, st + pad + fs * 1.5, W - sl - sr - pad * 3 - 104 * d);
-    if (HASH.fps && R.fpsText) c.fillText(R.fpsText, sl + pad, st + pad + fs * 2.7);
+    const hw = W - sl - sr - pad * 3 - 104 * d, tut = !G.title && !G.intro && this.tutorial();
+    let hy = st + pad + fs * 1.5;
+    if (tut) {   // chương hướng dẫn (tuần 5 mục 4): gợi ý đi → đánh → chờ trong ô nổi bật, xuống dòng nếu dài
+      c.font = `600 ${fs * .85}px system-ui, sans-serif`; const L = this.wrap(c, tut, hw - pad), lh = fs * 1.15;
+      c.fillStyle = 'rgba(60,40,8,.78)'; c.fillRect(sl + pad * .5, hy - 4 * d, hw + pad * .5, L.length * lh + 8 * d);
+      c.fillStyle = '#ffd27a'; c.fillRect(sl + pad * .5, hy - 4 * d, 3 * d, L.length * lh + 8 * d);
+      L.forEach((l, i) => c.fillText(l, sl + pad, hy + i * lh)); hy += L.length * lh + 8 * d;
+    } else { c.fillText(this.hint(), sl + pad, hy, hw); hy += fs * 1.2; }
+    const S0 = G.map;
+    if (S0.goal && !G.title && !G.intro) {   // mục tiêu chương, luôn hiện dưới gợi ý
+      c.font = `400 ${fs * .78}px system-ui, sans-serif`; c.fillStyle = 'rgba(255,210,122,.85)';
+      c.fillText('Mục tiêu: ' + Core.goalText(S0.goal, DATA).win, sl + pad, hy, hw); hy += fs * 1.2;
+    }
+    if (HASH.fps && R.fpsText) { c.fillStyle = 'rgba(200,190,170,.8)'; c.fillText(R.fpsText, sl + pad, hy); }
     const P = G.play;
     if (G.title) { this.title(c, G.title, W, H, d); return; }
+    if (G.intro) { this.intro(c, G.intro, W, H, d, sl, sr, sb, pad); return; }
     // Nút Hết lượt (góc trên phải): khi đang lượt ta và không ở giữa một nước đi. Lưu tạm (chiến dịch) nằm ngay dưới.
     if (S.phase === 'ta' && !Play.busy(P) && (P.mode === 'cho' || P.mode === 'chon')) {
       this.button(c, 'Hết lượt', 'hetluot', W - sr - pad - 104 * d, st + pad, 104 * d, 44 * d, false);
@@ -60,11 +73,92 @@ const HUD = {
     }
     if (P.levelUp) this.levelUp(c, P.levelUp, W, H, d);
     else if (P.banner) this.banner(c, P.banner, W, H, d);
-    if (P.over) {
-      this.banner(c, { text: P.over.text, sub: P.over.reason, side: P.over.side, t: 1, dur: 2 }, W, H, d);
-      if (G.campaign) this.row(c, P.over.win ? (G.campaign.done ? [['Màn chính', 'manchinh']] : [['Màn chính', 'manchinh'], ['Chương sau', 'chuongsau']]) : [['Màn chính', 'manchinh'], ['Chơi lại chương', 'choilai']], H - sb - pad, sl, sr, W, pad, d);
-    }
+    if (P.over) this.result(c, P.over, W, H, d, sl, sr, sb, pad);
     if (G.toast) this.banner(c, { text: G.toast.text, side: 'ta', t: G.toast.t, dur: G.toast.dur }, W, H, d);
+  },
+  // ----- Chương (tuần 5 mục 4) -----
+  // Cắt chữ thành dòng vừa bề rộng maxW (theo font đang đặt).
+  wrap(c, text, maxW) {
+    const out = []; let line = '';
+    for (const w of String(text).split(' ')) { const t = line ? line + ' ' + w : w; if (line && c.measureText(t).width > maxW) { out.push(line); line = w; } else line = t; }
+    if (line) out.push(line); return out;
+  },
+  RULE_TEXT: { noSkills: [true, 'Không kỹ năng'], noStatus: [true, 'Không trạng thái'], fog: [null, 'Có sương mù', 'Không sương'], deadZone: [true, 'Vùng Chết: quân ngã chết vĩnh viễn'] },
+  rulesText(rules) {
+    const out = [];
+    for (const k in this.RULE_TEXT) { const r = this.RULE_TEXT[k], v = (rules || {})[k]; if (v === true) out.push(r[1]); else if (v === false && r[2]) out.push(r[2]); }
+    return out.join(' · ');
+  },
+  speaker(who) { return who ? ((DATA.units.templates[who] || {}).name || who) : null; },
+  // Hộp hội thoại ở đáy: tên người nói (hoặc lời kể in nghiêng) + câu. Trả về mép trên.
+  talk(c, line, bottom, W, d, sl, sr, pad) {
+    const fs = 16 * d, w = Math.min(W - sl - sr - pad * 2, 460 * d), x = (W - w) / 2, who = this.speaker(line.who);
+    c.font = `${who ? 400 : 'italic 400'} ${fs}px system-ui, sans-serif`;
+    const L = this.wrap(c, line.text, w - pad * 2), lh = fs * 1.4, h = pad * 2 + (who ? fs * 1.5 : 0) + L.length * lh, y = bottom - h;
+    this.panel(c, x, y, w, h);
+    let yy = y + pad;
+    if (who) { c.font = `700 ${fs}px system-ui, sans-serif`; c.fillStyle = '#8fc4ff'; c.fillText(who, x + pad, yy); yy += fs * 1.5; }
+    c.font = `${who ? 400 : 'italic 400'} ${fs}px system-ui, sans-serif`; c.fillStyle = who ? '#f2e6cc' : 'rgba(230,220,200,.85)';
+    L.forEach((l, i) => c.fillText(l, x + pad, yy + i * lh));
+    return y;
+  },
+  // Màn chương: tên chương, mục tiêu, thua khi, luật, gia nhập; rồi hội thoại mở đầu từng câu (chạm để sang câu sau).
+  intro(c, I, W, H, d, sl, sr, sb, pad) {
+    const ch = I.ch, S = G.map, g = Core.goalText(S.goal, DATA), fs = 15 * d;
+    c.fillStyle = 'rgba(2,3,8,.62)'; c.fillRect(0, 0, W, H);
+    const w = Math.min(W - sl - sr - pad * 2, 460 * d), x = (W - w) / 2;
+    const rows = [['Mục tiêu', g.win], ['Thua khi', g.lose]], rt = this.rulesText(S.rules);
+    if (rt) rows.push(['Luật', rt]);
+    if ((ch.join || []).length) rows.push(['Gia nhập', ch.join.map(id => this.speaker(id)).join(', ')]);
+    c.font = `400 ${fs}px system-ui, sans-serif`;
+    const wrapped = rows.map(([k, v]) => [k, this.wrap(c, v, w - pad * 2 - 84 * d)]), lh = fs * 1.4;
+    const h = pad * 2 + 34 * d + wrapped.reduce((a, [, L]) => a + L.length * lh + 4 * d, 0);
+    const y = Math.max((R.safe ? R.safe[1] : 0) + 92 * d, H * .14);
+    this.panel(c, x, y, w, h);
+    c.font = `700 ${22 * d}px system-ui, sans-serif`; c.fillStyle = '#e8b04a'; c.fillText(ch.name || ch.id, x + pad, y + pad, w - pad * 2);
+    let yy = y + pad + 34 * d;
+    for (const [k, L] of wrapped) {
+      c.font = `600 ${fs * .85}px system-ui, sans-serif`; c.fillStyle = 'rgba(200,190,170,.8)'; c.fillText(k, x + pad, yy + 1 * d);
+      c.font = `400 ${fs}px system-ui, sans-serif`; c.fillStyle = k === 'Luật' && S.rules.deadZone ? '#ff8f74' : '#f2e6cc';
+      L.forEach((l, i) => c.fillText(l, x + pad + 84 * d, yy + i * lh)); yy += L.length * lh + 4 * d;
+    }
+    const lines = ch.intro || [], last = I.i >= lines.length - 1, bottom = H - sb - pad;
+    const acts = last ? [['Vào trận', 'vaotran']] : [['Bỏ qua', 'vaotran'], ['Tiếp ▶', 'tiep']];
+    this.row(c, acts, bottom, sl, sr, W, pad, d);
+    if (lines.length) {
+      const ty = this.talk(c, lines[Math.min(I.i, lines.length - 1)], bottom - 50 * d - pad * 2, W, d, sl, sr, pad);
+      c.font = `400 ${12 * d}px system-ui, sans-serif`; c.fillStyle = 'rgba(200,190,170,.6)'; c.textAlign = 'center';
+      c.fillText(`${Math.min(I.i, lines.length - 1) + 1}/${lines.length} · chạm để đọc tiếp`, W / 2, ty - 18 * d); c.textAlign = 'left';
+    }
+  },
+  // Kết quả trận: Thắng/Thua, lý do, số lượt, quân ta đã ngã, đã lưu; thắng thì hội thoại kết; rồi nút.
+  result(c, O, W, H, d, sl, sr, sb, pad) {
+    c.fillStyle = 'rgba(2,3,8,.5)'; c.fillRect(0, 0, W, H);
+    const S = G.map, fs = 15 * d, w = Math.min(W - sl - sr - pad * 2, 460 * d), x = (W - w) / 2;
+    const fell = S.units.filter(u => u.side === 'ta' && u.hp <= 0 && !u.escaped);
+    const info = [O.reason, (S.chapterName ? S.chapterName + ' · ' : '') + (O.turns || S.turn) + ' lượt',
+      fell.length ? (fell.some(u => u.dead) ? 'Đã ngã: ' : 'Rút lui: ') + fell.map(u => u.name + (u.dead ? ' (chết)' : '')).join(', ') : 'Không quân ta nào ngã'];
+    if (O.saved) info.push(O.saved);
+    const h = pad * 2 + 40 * d + info.length * fs * 1.45, y = Math.max((R.safe ? R.safe[1] : 0) + 92 * d, H * .16);
+    this.panel(c, x, y, w, h);
+    c.font = `800 ${28 * d}px system-ui, sans-serif`; c.fillStyle = O.win ? '#8fc4ff' : '#ff8f74'; c.textAlign = 'center';
+    c.fillText(O.text, W / 2, y + pad);
+    c.font = `400 ${fs}px system-ui, sans-serif`; c.fillStyle = '#f2e6cc';
+    info.forEach((l, i) => c.fillText(l, W / 2, y + pad + 40 * d + i * fs * 1.45, w - pad * 2)); c.textAlign = 'left';
+    const bottom = H - sb - pad, Q = G.outro;
+    if (Q && Q.i < Q.lines.length) {
+      this.row(c, [['Bỏ qua', 'boqua_ket'], ['Tiếp ▶', 'tiep_ket']], bottom, sl, sr, W, pad, d);
+      this.talk(c, Q.lines[Q.i], bottom - 50 * d - pad * 2, W, d, sl, sr, pad);
+      return;
+    }
+    if (G.campaign) this.row(c, O.win ? (G.campaign.done ? [['Màn chính', 'manchinh']] : [['Màn chính', 'manchinh'], ['Chương sau', 'chuongsau']]) : [['Màn chính', 'manchinh'], ['Chơi lại chương', 'choilai']], bottom, sl, sr, W, pad, d);
+  },
+  // Gợi ý hướng dẫn của chương (tutorial.hints) theo trạng thái Play, chỉ trong tutorial.turns lượt đầu và khi đang tới lượt ta.
+  tutorial() {
+    const T = G.chapter && G.chapter.tutorial, P = G.play; if (!T || !P || P.over || P.levelUp || P.banner || P.battle || P.anim) return null;
+    if (P.S.phase !== 'ta' || P.S.turn > T.turns) return null;
+    const k = P.mode === 'cho' ? 'cho' : P.mode === 'chon' ? (P.target ? 'dich' : 'chon') : P.mode === 'menu' ? (Play.targets(P).length ? 'menuDanh' : 'menu') : P.mode === 'muctieu' ? (P.fc ? 'dubao' : 'muctieu') : null;
+    return (k && T.hints && T.hints[k]) || null;
   },
   // Màn chính (tuần 5): Tiếp tục (nếu có bản lưu) · Chơi mới Casual / Classic. Bản lưu hỏng/khác phiên bản thì báo, không vỡ.
   title(c, T, W, H, d) {
@@ -89,7 +183,7 @@ const HUD = {
   },
   // Một hàng nút canh phải, nằm trên mép `bottom`. Nút cuối là nút chính.
   row(c, acts, bottom, sl, sr, W, pad, d) {
-    const n = acts.length, bh = 50 * d, bw = Math.min(118 * d, (W - sl - sr - pad * (n + 1)) / n), y = bottom - pad - bh;
+    const n = acts.length, bh = 50 * d, bw = Math.min(140 * d, (W - sl - sr - pad * (n + 1)) / n), y = bottom - pad - bh;
     acts.forEach(([label, act], i) => this.button(c, label, act, W - sr - pad - (n - i) * bw - (n - 1 - i) * pad, y, bw, bh, i === n - 1));
   },
   // Thanh đổi vũ khí trên bảng dự báo: [◀]  Lửa đèn · 1/2  [▶]. Trả về mép trên mới.

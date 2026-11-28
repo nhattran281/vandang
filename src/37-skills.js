@@ -85,6 +85,7 @@ Object.assign(Core, (() => {
   //   effects: mỗi hiệu ứng { type, ...tham số, target uid, x, y, applied, skipped? } — skipped = điều kiện không khớp.
   function useSkill(S, u, id, x, y, data, ctx) {
     const k = getSkill(id, data);
+    if (S.rules && S.rules.noSkills) return { ok: false, error: 'chương này không dùng kỹ năng' };   // luật chương (data/chapters.json)
     if (!(u.skills || []).includes(id)) return { ok: false, error: `${u.name} không có kỹ năng ${k.name}` };
     if (!canAfford(u, id, data)) return { ok: false, error: `không đủ ${data.skills.resources[k.resource].name}` };
     if (!skillTargets(S, u, id, data).some(t => t.x === x && t.y === y)) return { ok: false, error: `ô (${x},${y}) không phải mục tiêu hợp lệ của ${k.name}` };

@@ -76,7 +76,14 @@ function buildGridBoard(S, seed) {
         env.push({ x: cx, y: y0 + .8, z: cz - .2, c: 0xff8a3a, d: 6, I: 6, flick: true });
         break;
       }
-      case '#': block(cx, cz, g + 1.5, jc(COL.stoneD, .08), L_MASON);
+      case '#': if (S.decor && S.decor.wall === 'nha') {   // nhà tranh (map A làng chài): nền đất, vách gỗ, mái tranh
+          block(cx, cz, g + .12, jc(COL.earth), L_DIRT); const y0 = g + .12;
+          land.box(1.5, .95, 1.3, cx, y0 + .48, cz, jc(COL.wood, .12), { l: L_WOOD });
+          land.box(.34, .55, .06, cx + .25, y0 + .28, cz + .66, COL.woodD, { l: L_WOOD });
+          land.cone(1.35, .95, cx, y0 + 1.42, cz, jc(COL.thatch, .1), { n: 4, l: L_THATCH, r: [0, PI / 4, 0] });
+          break;
+        }
+        block(cx, cz, g + 1.5, jc(COL.stoneD, .08), L_MASON);
         for (const [sx, sz] of [[-1, -1], [1, 1]]) land.box(.6, .3, .6, cx + sx * .5, g + 1.65, cz + sz * .5, COL.stone, { l: L_MASON }); break;
       case '^': {
         const lo = Math.min(t.h, minNb(t.x, t.y)) * HS; block(cx, cz, lo, jc(COL.earth), L_DIRT);
@@ -90,6 +97,15 @@ function buildGridBoard(S, seed) {
     const { x, z } = tileWorld(S, k.x, k.y), y = standY(S, k.x, k.y);
     land.box(.7, .42, .48, x, y + .21, z, COL.wood, { l: L_WOOD }); land.box(.74, .08, .52, x, y + .4, z, COL.woodD, { l: L_WOOD });
     for (const sx of [-.22, .22]) land.box(.06, .46, .52, x + sx, y + .23, z, COL.brass, { l: L_METAL, emis: .02 });
+  }
+  // Thuyền neo ở bến (decor.boats; Ch.1 = ô đích 'chạy tới thuyền'): thân gỗ thuôn hai đầu + cột buồm cói.
+  for (const [bx, by] of (S.decor && S.decor.boats) || []) {
+    const { x, z } = tileWorld(S, bx, by), y = standY(S, bx, by) - .2;
+    land.box(1.1, .3, 1.5, x, y + .1, z, COL.woodD, { l: L_WOOD });
+    for (const sz of [-1, 1]) land.box(.7, .26, .4, x, y + .1, z + sz * .9, COL.woodD, { l: L_WOOD, r: [0, PI / 4, 0] });
+    for (const sx of [-1, 1]) land.box(.08, .2, 1.6, x + sx * .55, y + .32, z, COL.wood, { l: L_WOOD });
+    land.cyl(.04, 1.6, x, y + .95, z - .55, COL.woodD, { n: 5, l: L_WOOD });
+    land.box(.05, .9, .7, x, y + 1.15, z - .2, COL.thatch, { l: L_THATCH });
   }
   // nền đá dưới bàn cờ
   land.box(S.w * TS + .4, 1.2, S.h * TS + .4, 0, -3.2, 0, mulC(COL.basalt, .8), { l: L_ROCK });

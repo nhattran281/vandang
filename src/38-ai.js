@@ -113,7 +113,7 @@ Object.assign(Core, (() => {
     const foes = S.units.filter(o => o.hp > 0 && o !== u && hostile(u, o));
     const threats = S.units.filter(o => o.hp > 0 && o !== u && hostile(o, u) && usableWeapons(o).length).map(o => threatOf(S, o, data));
     const wpns = usableWeapons(u);
-    const skills = (u.skills || []).filter(id => Core.canAfford(u, id, data));
+    const skills = S.rules && S.rules.noSkills ? [] : (u.skills || []).filter(id => Core.canAfford(u, id, data));   // luật chương noSkills (Ch.1)
     const dmgSkills = skills.filter(id => data.skills.skills[id].effects.some(e => e.type === 'damage'));
     const healSkills = skills.filter(id => data.skills.skills[id].effects.some(e => e.type === 'heal'));
     const allies = S.units.filter(o => o.hp > 0 && o !== u && o.side === u.side);

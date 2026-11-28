@@ -16,17 +16,56 @@ const Save = (() => {
   const KEYS = { chapter: 'vandang.chapter', suspend: 'vandang.suspend' };
   const MODES = ['casual', 'classic'];
   const clone = o => JSON.parse(JSON.stringify(o));
-  const chapters = data => (data.campaign && data.campaign.chapters) || [];
+  const chapters = data => (data.chapters && data.chapters.chapters) || [];   // data/chapters.json (tuần 5 mục 4)
   const chapterSeed = (C, i) => ((C.seed >>> 0) + Math.imul(i + 1, 0x9E3779B1)) >>> 0;   // mỗi chương một seed, tất định theo seed chiến dịch
 
-  // Kiểm tra data/campaign.json. Trả về mảng lỗi.
+  // ----- Chương (data/chapters.json, tuần 5 mục 4) -----
+  // Mỗi chương: { id, name, map, units?, roster?, join, win, lose?, rules?, intro?, outro?, tutorial? }
+  //   units / roster: ghi đè lớp quân + roster của map (dùng lại map cho chương khác, vd map A cho Ch.1 và Ch.8). Không ghi thì dùng của map.
+  //   join: quân ta gia nhập ở chương này (phải có trong roster A). Quân ra trận vẫn là roster A (GDD 5.4).
+  //   win / lose: xem Core.outcome. rules: { noSkills, noStatus, fog, deadZone } — deadZone = Vùng Chết (GDD 2.9);
+  //     noStatus / fog: mới ghi cờ, chạy thật ở tuần 8.
+  //   intro / outro: hội thoại ngắn [{ who: id mẫu | null (lời kể), text }]. tutorial: { turns, hints: { trạng thái: câu } }.
+  const RULES = ['noSkills', 'noStatus', 'fog', 'deadZone'];
+  const HINT_KEYS = ['cho', 'chon', 'dich', 'menu', 'menuDanh', 'muctieu', 'dubao'];
+  const LINE_MAX = 140;
+  // Map của chương: map gốc + lớp quân / roster ghi đè.
+  function chapterMap(ch, data) {
+    const m = data.maps[ch.map]; if (!m) return null;
+    return Object.assign({}, m, ch.units ? { units: ch.units } : {}, ch.roster ? { roster: ch.roster } : {});
+  }
+  // Kiểm tra data/chapters.json. Trả về mảng lỗi.
   function validateCampaign(data) {
     const errs = [], L = chapters(data);
-    if (!L.length) errs.push('campaign.json: chưa có chương nào');
+    if (!L.length) errs.push('chapters.json: chưa có chương nào');
     const ids = new Set();
     L.forEach((ch, i) => {
+      const p = `chương ${ch.id || i}`;
       if (!ch.id || ids.has(ch.id)) errs.push(`chương ${i}: thiếu id hoặc trùng id`); ids.add(ch.id);
-      if (!data.maps[ch.map]) errs.push(`chương ${ch.id}: không có map '${ch.map}'`);
+      const m = chapterMap(ch, data);
+      if (!m) { errs.push(`${p}: không có map '${ch.map}'`); return; }
+      for (const e of Core.validateMap(m, data)) errs.push(`${p}: ${e}`);
+      if (!Array.isArray(m.units)) { errs.push(`${p}: map không có lớp quân`); return; }
+      const A = ((m.roster || {}).A || []).map(Core.rosterTpl);
+      if (!A.length) errs.push(`${p}: roster A trống`);
+      for (const id of ch.join || []) if (!A.includes(id)) errs.push(`${p}: join '${id}' không có trong roster A`);
+      if (ch.deadzone !== undefined) errs.push(`${p}: deadzone chuyển vào rules.deadZone`);
+      for (const k in ch.rules || {}) { if (!RULES.includes(k)) errs.push(`${p}: luật lạ '${k}' (${RULES.join('/')})`); else if (typeof ch.rules[k] !== 'boolean') errs.push(`${p}: rules.${k} phải là true/false`); }
+      for (const e of Core.validateGoal(ch.win, ch.lose, m, data, p)) errs.push(e);
+      for (const k of ['intro', 'outro']) {
+        if (ch[k] === undefined) continue;
+        if (!Array.isArray(ch[k])) { errs.push(`${p}: ${k} phải là mảng`); continue; }
+        ch[k].forEach((l, j) => {
+          if (!l || typeof l.text !== 'string' || !l.text) errs.push(`${p}: ${k}[${j}] thiếu text`);
+          else if (l.text.length > LINE_MAX) errs.push(`${p}: ${k}[${j}] dài quá ${LINE_MAX} ký tự`);
+          if (l && l.who != null && !data.units.templates[l.who]) errs.push(`${p}: ${k}[${j}] who lạ '${l.who}'`);
+        });
+      }
+      const T = ch.tutorial;
+      if (T) {
+        if (!(Number.isInteger(T.turns) && T.turns > 0)) errs.push(`${p}: tutorial.turns phải là số nguyên > 0`);
+        for (const k in T.hints || {}) { if (!HINT_KEYS.includes(k)) errs.push(`${p}: tutorial.hints.${k} lạ (${HINT_KEYS.join('/')})`); else if (String(T.hints[k]).length > LINE_MAX) errs.push(`${p}: tutorial.hints.${k} dài quá`); }
+      }
     });
     return errs;
   }
@@ -59,11 +98,14 @@ const Save = (() => {
   // Dựng trạng thái trận đầu chương từ chiến dịch. Trả về { S, seed, chapter }.
   // - Quân ta trong roster của map: đã có trong đội thì lấy bản ghi (chết rồi thì không ra trận); chưa có = gia nhập mới.
   // - Đầu chương: HP đầy, tài nguyên kỹ năng đầy, quân rút lui (Casual) quay lại.
-  // - Chế độ tử vong của trận: chương Vùng Chết (deadzone: true) → 'deadzone'; còn lại theo chiến dịch.
+  // - Chế độ tử vong của trận: chương Vùng Chết (rules.deadZone) → 'deadzone'; còn lại theo chiến dịch.
+  // - S.goal (điều kiện thắng/thua), S.rules (luật chương) lấy từ chapters.json.
   function startChapter(C, data) {
     const ch = chapterOf(C, data); if (!ch) throw new Error('chiến dịch đã hết chương');
-    const S = Core.loadMap(data.maps[ch.map], data);
-    S.mode = ch.deadzone ? 'deadzone' : C.mode; S.win = ch.win || 'rout'; S.chapter = ch.id; S.chapterName = ch.name || ch.id;
+    const S = Core.loadMap(chapterMap(ch, data), data), rules = Object.assign({}, ch.rules);
+    S.mode = rules.deadZone ? 'deadzone' : C.mode; S.chapter = ch.id; S.chapterName = ch.name || ch.id;
+    S.goal = Core.normalizeGoal(ch.win, ch.lose); S.rules = rules;
+    S.win = typeof ch.win === 'string' ? ch.win : 'goal';   // giữ trường cũ cho bản lưu tạm cũ; điều kiện thật ở S.goal
     S.units = S.units.filter(u => {
       if (u.side !== 'ta') return true;
       const m = C.party.find(p => p.tpl === u.tpl);
@@ -190,5 +232,5 @@ const Save = (() => {
     };
   }
 
-  return { VERSION, KEYS, MODES, validateCampaign, newCampaign, chapterOf, chapterSeed, lanterns, memberOf, applyMember, startChapter, finishChapter, packBattle, unpackBattle, parse, begin, envChapter, envSuspend, memory, local, store };
+  return { VERSION, KEYS, MODES, RULES, HINT_KEYS, validateCampaign, validateChapters: validateCampaign, chapterMap, chapters, newCampaign, chapterOf, chapterSeed, lanterns, memberOf, applyMember, startChapter, finishChapter, packBattle, unpackBattle, parse, begin, envChapter, envSuspend, memory, local, store };
 })();

@@ -3,9 +3,10 @@
 // Màu:  ô dừng được = xanh lam đèn · ô chỉ đi qua (có quân ta / có rương khi quân bay) = tím nhạt
 //       đường đi = vàng đèn lồng, ô đích sáng hơn.
 //       chọn mục tiêu: tầm đánh = đỏ nhạt · địch trong tầm = đỏ · mục tiêu đang xem dự báo = đỏ sáng
+//       ô đích của chương (reach / area, tuần 5 mục 4) = vàng nhạt, luôn hiện
 const OVL = {
   COL: { stop: [.24, .55, 1, .42], pass: [.66, .5, .9, .34], dest: [.45, .75, 1, .62], path: [1, .82, .45, .95],
-    reach: [1, .3, .2, .2], foe: [1, .28, .18, .55], aim: [1, .45, .3, .85] },
+    reach: [1, .3, .2, .2], foe: [1, .28, .18, .55], aim: [1, .45, .3, .85], goal: [1, .78, .3, .38] },
   mesh: null, ver: -1,
 };
 
@@ -31,6 +32,11 @@ function buildOverlay(P) {
       const o = Core.unitAt(S, x, y), foe = o && P.targets.includes(o);
       sq(x, y, foe ? (o === P.foe ? OVL.COL.aim : OVL.COL.foe) : OVL.COL.reach);
     }
+  }
+  // Ô đích của chương: reach (tiles hoặc exits) / area (rect hoặc tiles). Vẽ nhỏ hơn để vùng đi được vẫn đọc rõ khi chồng lên.
+  if (S.goal && !P.over) for (const c of S.goal.win) {
+    if (c.type === 'reach' || (c.type === 'area' && !c.rect)) for (const [x, y] of Core.goalTiles(S, c)) sq(x, y, OVL.COL.goal, .62);
+    if (c.type === 'area' && c.rect) for (let y = c.rect[1]; y <= c.rect[3]; y++) for (let x = c.rect[0]; x <= c.rect[2]; x++) sq(x, y, OVL.COL.goal, .62);
   }
   const R0 = P.mode === 'chon' ? P.R : null;
   if (R0) {

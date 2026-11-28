@@ -1,0 +1,38 @@
+{
+  "_doc": "Chương của chiến dịch theo thứ tự (GDD 9, 9.2; tuần 5 mục 4). map = id trong data/maps; units/roster (tùy chọn) ghi đè lớp quân + roster của map để dùng lại map. join = quân ta gia nhập ở chương (phải có trong roster A). win = điều kiện thắng (một hoặc mảng, khớp cái nào cũng thắng): 'rout' hạ hết địch · { type:'reach', units:[id mẫu], tiles? } tới ô đích (mặc định exits của map) · { type:'boss', tpl? } hạ boss · { type:'area', rect:[x0,y0,x1,y1] | tiles } đưa cả đội tới vùng · { type:'survive', turns } giữ sống N lượt. lose = điều kiện thua thêm (Đăng/Linh ngã luôn thua, GDD 2.9): { type:'turns', turns } · { type:'protect', tpl }. rules: noSkills · noStatus · fog · deadZone (Vùng Chết); noStatus/fog mới ghi cờ, chạy thật ở tuần 8. intro/outro: hội thoại ngắn [{ who: id mẫu hoặc null = lời kể, text ≤ 140 ký tự }]. tutorial: { turns, hints } — câu gợi ý thay dòng gợi ý thường trong turns lượt đầu, theo trạng thái: cho · chon · dich · menu · menuDanh · muctieu · dubao.",
+  "chapters": [
+    {
+      "id": "ch1",
+      "name": "Ch.1 — Làng Chài Cháy",
+      "map": "lang_chai",
+      "join": ["dang", "linh", "tran"],
+      "win": ["rout", { "type": "reach", "units": ["dang", "linh"], "text": "đưa Đăng và Linh lên thuyền" }],
+      "rules": { "noSkills": true, "noStatus": true, "fog": false, "deadZone": false },
+      "intro": [
+        { "who": null, "text": "Làng chài ven biển, giữa trưa. Khói bốc từ mái tranh, lính Đăng Viện lục từng nhà." },
+        { "who": "tran", "text": "Chúng tìm con bé. Thuyền còn neo ở bến, đi ngay thì kịp." },
+        { "who": "linh", "text": "Cha ơi… họ đốt cả nhà bà Tư rồi." },
+        { "who": "dang", "text": "Đứng sau cha. Đừng rời xa quá hai bước." },
+        { "who": "tran", "text": "Lão già này còn cầm được kiếm. Để lão đi trước." }
+      ],
+      "outro": [
+        { "who": "dang", "text": "Lên thuyền. Đi." },
+        { "who": "linh", "text": "Còn dân làng… có ai cứu họ không cha?" },
+        { "who": "tran", "text": "Viện sẽ quay lại, đông hơn. Qua được bến đò rồi hẵng tính." },
+        { "who": "dang", "text": "Cha chỉ lo được cho con thôi." }
+      ],
+      "tutorial": {
+        "turns": 2,
+        "hints": {
+          "cho": "Hướng dẫn · Chạm Trấn hoặc Đăng để xem các ô đi được (xanh).",
+          "chon": "Chạm một ô xanh để xem đường đi.",
+          "dich": "Chạm lại ô đó để đi tới.",
+          "menuDanh": "Có địch trong tầm: chọn Đánh.",
+          "muctieu": "Chạm quân địch trong ô đỏ để xem dự báo.",
+          "dubao": "Xem Trúng và ST, rồi chạm lại mục tiêu để đánh.",
+          "menu": "Chưa ai trong tầm: chọn Chờ để quân này nghỉ lượt."
+        }
+      }
+    }
+  ]
+}

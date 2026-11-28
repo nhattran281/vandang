@@ -53,6 +53,12 @@ const Core = (() => {
       if (!Array.isArray(m.exits)) fail(errs, 'exits phải là mảng [[x,y],...]');
       else m.exits.forEach((e, i) => { if (!Array.isArray(e) || !(e[0] >= 0 && e[0] < w && e[1] >= 0 && e[1] < h)) fail(errs, `exits[${i}] nằm ngoài map`); });
     }
+    // decor (chỉ cho phần vẽ): wall = cách vẽ ô vách '#' ('nha' = nhà tranh), boats = ô có thuyền neo.
+    if (m.decor !== undefined) {
+      const D = m.decor || {};
+      if (D.wall !== undefined && !['nha'].includes(D.wall)) fail(errs, `decor.wall lạ '${D.wall}'`);
+      (D.boats || []).forEach((e, i) => { if (!Array.isArray(e) || !(e[0] >= 0 && e[0] < w && e[1] >= 0 && e[1] < h)) fail(errs, `decor.boats[${i}] nằm ngoài map`); });
+    }
     return errs;
   }
   // Mục roster: chuỗi id mẫu, hoặc { tpl, ai, lv } để gắn hành vi AI riêng (GDD 4; ghi đè ai của mẫu) / đổi cấp (địch tự sinh chỉ số theo cấp, GDD 5.2).
@@ -234,6 +240,7 @@ const Core = (() => {
     }
     const S = { id: m.id, name: m.name || m.id, biome: m.biome || 'ashen', w, h, tiles, units: [], chests: [], turn: 1, phase: 'ta' };
     if (m.exits) S.exits = m.exits.map(e => [e[0], e[1]]);
+    if (m.decor) S.decor = JSON.parse(JSON.stringify(m.decor));
     if (m.units) {
       const next = { A: 0, E: 0, N: 0, C: 0 }; let uid = 1;
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -372,5 +379,100 @@ const Core = (() => {
   const rangeBonus = (u, ah, bh) => (u && u.weapon && u.weapon.highGround && ah != null && bh != null && ah > bh) ? u.weapon.highGround : 0;
   const heightAt = (S, x, y) => { const t = tile(S, x, y); return t ? t.h : 0; };
 
-  return { rangeBonus, heightAt, validateUnits, TAGS, STATUS_IDS, LOOK_RIGS, rng, validateMap, loadMap, makeUnit, validateClasses, statsOf, growthOf, classOf, maxLv, rankExp, makeWeapon, canWield, usable, equipFirst, validateWeapons, RANKS, inside, tile, terrainOf, moveCost, unitAt, chestAt, openChest, isExit, escape, toAscii, STAT_KEYS, heightRule, canStep, stepCost, reachable, pathTo, canStopAt };
+  // ---------- Điều kiện thắng / thua theo chương (tuần 5 mục 4) ----------
+  // S.goal = { win: [điều kiện…], lose: [điều kiện…] } do Save.startChapter dựng từ data/chapters.json.
+  // Thắng khi khớp BẤT KỲ điều kiện thắng nào. Thua: Đăng/Linh ngã (luôn có, GDD 2.9) hoặc khớp một điều kiện thua.
+  // Xét thua trước thắng (hạ địch cuối mà Đăng ngã cùng lúc thì vẫn thua).
+  //   rout                      hạ hết địch (đã ngã hoặc đã thoát)
+  //   reach   { units, tiles? } mọi quân trong units (id mẫu, mặc định ['dang']) có mặt đều đứng trên ô đích. tiles mặc định = exits của map.
+  //   boss    { tpl? }          hạ hết địch có boss: true (hoặc mẫu tpl)
+  //   area    { rect | tiles }  mọi quân ta còn trên bàn cờ đều đứng trong vùng. rect = [x0,y0,x1,y1] (gồm cả hai mép)
+  //   survive { turns }         giữ sống tới hết lượt turns (thắng khi sang lượt turns + 1)
+  // Thua thêm: turns { turns } (quá lượt turns chưa thắng) · protect { tpl } (quân tpl ngã).
+  // reach / area: lượt ta chỉ tính quân đã xong hành động (u.done) — đứng tạm ở menu, còn Hoàn tác được thì chưa tính.
+  const WIN_TYPES = ['rout', 'reach', 'boss', 'area', 'survive'], LOSE_TYPES = ['lord', 'turns', 'protect'];
+  const lordOf = u => u.side === 'ta' && !!(Core.isLord && Core.isLord(u));
+  // Chuẩn hóa win/lose của chương: chuỗi 'rout' | { type } | mảng → { win: [...], lose: [...] }.
+  function normalizeGoal(win, lose) {
+    const list = v => (v == null ? [] : Array.isArray(v) ? v : [v]).map(c => typeof c === 'string' ? { type: c } : Object.assign({}, c));
+    const w = list(win == null ? 'rout' : win);
+    return { win: w, lose: list(lose).filter(c => c.type !== 'lord') };
+  }
+  const goalOf = S => S.goal || (S.win === 'rout' ? { win: [{ type: 'rout' }], lose: [] } : null);   // lưu tạm cũ chỉ có S.win
+  const goalTiles = (S, c) => c.tiles || S.exits || [];
+  const inZone = (S, c, x, y) => c.rect ? x >= c.rect[0] && y >= c.rect[1] && x <= c.rect[2] && y <= c.rect[3] : goalTiles(S, c).some(t => t[0] === x && t[1] === y);
+  const settled = (S, u) => S.phase !== 'ta' || u.done;
+  function goalMet(S, c) {
+    const live = S.units.filter(u => u.hp > 0);
+    switch (c.type) {
+      case 'rout': return !live.some(u => u.side === 'dich');
+      case 'reach': {
+        const need = live.filter(u => u.side === 'ta' && (c.units || ['dang']).includes(u.tpl));
+        return need.length > 0 && need.every(u => settled(S, u) && goalTiles(S, c).some(t => t[0] === u.x && t[1] === u.y));
+      }
+      case 'boss': {
+        const bosses = S.units.filter(u => u.side === 'dich' && (c.tpl ? u.tpl === c.tpl : u.boss));
+        return bosses.length > 0 && bosses.every(u => u.hp <= 0);
+      }
+      case 'area': { const ta = live.filter(u => u.side === 'ta'); return ta.length > 0 && ta.every(u => settled(S, u) && inZone(S, c, u.x, u.y)); }
+      case 'survive': return S.turn > c.turns;
+    }
+    return false;
+  }
+  // null = trận chưa xong; { win, type, reason, uid? }
+  function outcome(S) {
+    const G = goalOf(S); if (!G) return null;
+    const fell = S.units.find(u => u.hp <= 0 && !u.escaped && lordOf(u));
+    if (fell) return { win: false, type: 'lord', uid: fell.uid, reason: fell.name + ' đã ngã' };
+    for (const c of G.lose) {
+      if (c.type === 'turns' && S.turn > c.turns) return { win: false, type: 'turns', reason: `Quá ${c.turns} lượt` };
+      if (c.type === 'protect') { const u = S.units.find(o => o.tpl === c.tpl && o.hp <= 0 && !o.escaped); if (u) return { win: false, type: 'protect', uid: u.uid, reason: u.name + ' đã ngã' }; }
+    }
+    for (const c of G.win) if (goalMet(S, c)) return { win: true, type: c.type, reason: WIN_REASON[c.type] || 'Đạt mục tiêu' };
+    return null;
+  }
+  const WIN_REASON = { rout: 'Đã hạ hết quân địch', reach: 'Đã tới nơi', boss: 'Đã hạ thủ lĩnh', area: 'Cả đội đã tới nơi', survive: 'Đã cầm cự đủ lượt' };
+  // Câu mục tiêu cho người chơi (màn chương, băng chữ đầu trận). data dùng để lấy tên mẫu đơn vị.
+  function goalText(goal, data) {
+    const nm = id => (data.units.templates[id] || {}).name || id, names = l => l.map(nm).join(' và ');
+    const W = { rout: () => 'hạ hết quân địch', reach: c => `đưa ${names(c.units || ['dang'])} tới ô đích`, boss: c => c.tpl ? `hạ ${nm(c.tpl)}` : 'hạ thủ lĩnh địch',
+      area: () => 'đưa cả đội tới vùng đích', survive: c => `cầm cự ${c.turns} lượt` };
+    const L = { turns: c => `quá ${c.turns} lượt`, protect: c => `${nm(c.tpl)} ngã` };
+    const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+    return { win: cap(goal.win.map(c => (c.text || (W[c.type] ? W[c.type](c) : c.type))).join(' hoặc ')),
+      lose: cap(['Đăng hoặc Linh ngã'].concat(goal.lose.map(c => c.text || (L[c.type] ? L[c.type](c) : c.type))).join(' · ')) };
+  }
+  // Kiểm tra điều kiện thắng/thua của một chương trên map m (đã gộp roster). Trả về mảng lỗi.
+  function validateGoal(win, lose, m, data, where) {
+    const errs = [], G = normalizeGoal(win, lose), h = m.terrain.length, w = m.terrain[0].length;
+    const inMap = t => Array.isArray(t) && t[0] >= 0 && t[0] < w && t[1] >= 0 && t[1] < h;
+    const rosterIds = c => (((m.roster || {})[c]) || []).map(rosterTpl);
+    if (!G.win.length) fail(errs, `${where}: chưa có điều kiện thắng`);
+    for (const c of G.win) {
+      if (!WIN_TYPES.includes(c.type)) { fail(errs, `${where}: điều kiện thắng lạ '${c.type}' (${WIN_TYPES.join('/')})`); continue; }
+      if (c.type === 'reach') {
+        const tiles = c.tiles || m.exits;
+        if (!Array.isArray(tiles) || !tiles.length) fail(errs, `${where}: reach cần tiles hoặc exits của map`);
+        else tiles.forEach((t, i) => { if (!inMap(t)) fail(errs, `${where}: reach ô ${i} nằm ngoài map`); else if (data.terrain.tiles[m.terrain[t[1]][t[0]]].cost.bo === null) fail(errs, `${where}: reach ô (${t}) quân bộ không đứng được`); });
+        for (const id of c.units || ['dang']) if (!rosterIds('A').includes(id)) fail(errs, `${where}: reach cần '${id}' nhưng roster A không có`);
+      }
+      if (c.type === 'boss') {
+        const E = rosterIds('E'); if (!E.some(id => c.tpl ? id === c.tpl : (data.units.templates[id] || {}).boss)) fail(errs, `${where}: boss nhưng map không có địch ${c.tpl || 'boss'}`);
+      }
+      if (c.type === 'area') {
+        if (c.rect) { if (!(Array.isArray(c.rect) && c.rect.length === 4 && inMap([c.rect[0], c.rect[1]]) && inMap([c.rect[2], c.rect[3]]) && c.rect[0] <= c.rect[2] && c.rect[1] <= c.rect[3])) fail(errs, `${where}: area.rect phải là [x0,y0,x1,y1] trong map`); }
+        else if (!(c.tiles || m.exits || []).length) fail(errs, `${where}: area cần rect, tiles hoặc exits`);
+      }
+      if (c.type === 'survive' && !(Number.isInteger(c.turns) && c.turns > 0)) fail(errs, `${where}: survive.turns phải là số nguyên > 0`);
+    }
+    for (const c of G.lose) {
+      if (!LOSE_TYPES.includes(c.type)) { fail(errs, `${where}: điều kiện thua lạ '${c.type}' (${LOSE_TYPES.join('/')})`); continue; }
+      if (c.type === 'turns' && !(Number.isInteger(c.turns) && c.turns > 0)) fail(errs, `${where}: lose turns phải là số nguyên > 0`);
+      if (c.type === 'protect' && !Object.keys(m.roster || {}).some(k => rosterIds(k).includes(c.tpl))) fail(errs, `${where}: protect '${c.tpl}' không có trên map`);
+    }
+    return errs;
+  }
+
+  return { WIN_TYPES, LOSE_TYPES, normalizeGoal, goalTiles, inZone, outcome, goalText, validateGoal, rosterTpl,
+    rangeBonus, heightAt, validateUnits, TAGS, STATUS_IDS, LOOK_RIGS, rng, validateMap, loadMap, makeUnit, validateClasses, statsOf, growthOf, classOf, maxLv, rankExp, makeWeapon, canWield, usable, equipFirst, validateWeapons, RANKS, inside, tile, terrainOf, moveCost, unitAt, chestAt, openChest, isExit, escape, toAscii, STAT_KEYS, heightRule, canStep, stepCost, reachable, pathTo, canStopAt };
 })();

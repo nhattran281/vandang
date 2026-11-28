@@ -14,7 +14,7 @@
 // P.mode = 'may': lượt Địch / NPC đang tự chạy (Core.planTurn, 38-ai.js). Trận của quân máy phát lại qua P.battle như quân ta;
 //   P.act = hành động chờ chạy sau khi đi xong; P.lastPlan = kế hoạch gần nhất, P.lastAct = kết quả Core.aiAct gần nhất (để soi).
 //   Hành vi (38-ai.js): quân 'cho_tam' được đánh thức thì đặt u.awake; đạo tặc thoát thì u.escaped (hp = 0, biến khỏi bàn cờ).
-// P.over: trận đã kết thúc — mọi thao tác bị khóa. { win:false } Đăng/Linh ngã → thua; { win:true } hạ hết địch → thắng (tuần 5, tạm; điều kiện thắng theo chương thêm sau).
+// P.over: trận đã kết thúc — mọi thao tác bị khóa. { win, type, text, reason, turns }: Đăng/Linh ngã → thua; điều kiện thắng/thua của chương (S.goal, Core.outcome).
 // P.levelUp (tuần 5): { list: growth.levels + growth.ranks, t } — bảng "Lên cấp" sau trận; chạm (Play.tap / dismissLevel) hoặc hết LEVEL_TIME thì đóng.
 //   Trong lúc hiện bảng, mọi thứ khác tạm dừng (busy). P.lastGrowth = growth log gần nhất (39-level).
 // S.phase: 'ta' | 'dich' | 'npc'. Hết lượt NPC thì sang lượt ta mới (S.turn + 1).
@@ -163,7 +163,7 @@ const Play = (() => {
     const b = P.battle; P.battle = null; P.lastFight = b.res; clearSel(P);
     showGrowth(P, b.growth);
     const o = b.res.outcome;
-    if (o && o.gameOver) { P.over = { win: false, text: 'Thua trận', side: 'dich', reason: (o.uid === b.a.uid ? b.a : b.d).name + ' đã ngã' }; P.ver++; return; }
+    if (o && o.gameOver) { P.over = { win: false, type: 'lord', text: 'Thua trận', side: 'dich', reason: (o.uid === b.a.uid ? b.a : b.d).name + ' đã ngã', turns: P.S.turn }; P.ver++; return; }
     if (checkWin(P)) return;
     if (P.S.phase !== 'ta') { P.mode = 'may'; P.gap = GAP_TIME; return; }   // trận của quân máy: đi tiếp quân sau
     if (!left(P)) endTurn(P);
@@ -228,14 +228,15 @@ const Play = (() => {
   }
   function dismissLevel(P) { if (!P.levelUp) return false; P.levelUp = null; P.ver++; return true; }
 
-  // ----- Thắng trận (tuần 5, tạm) -----
-  // Điều kiện thắng do chương bật qua S.win (Save.startChapter); map thử không có S.win thì không bao giờ thắng (như trước).
-  // 'rout' = không còn địch trên bàn cờ (đã ngã hoặc đã thoát). Các điều kiện khác (chạy tới ô, hạ boss, thắp tháp) thêm sau.
-  const won = S => S.win === 'rout' && !S.units.some(u => u.side === 'dich' && u.hp > 0);
+  // ----- Thắng / thua theo chương (tuần 5 mục 4) -----
+  // Điều kiện do chương bật qua S.goal (Save.startChapter, Core.outcome); map thử không có S.goal thì không bao giờ thắng (như trước).
+  // Đăng/Linh ngã trong trận đánh vẫn xử lý ngay ở endBattle; ở đây bắt thêm: hạ hết địch, tới ô đích, hạ boss, cả đội tới vùng, giữ sống N lượt, quá N lượt.
+  const won = S => { const o = Core.outcome(S); return !!(o && o.win); };
   function checkWin(P) {
-    if (P.over || !won(P.S)) return false;
-    clearSel(P); P.mode = 'cho'; P.queue = []; P.act = null; P.banner = null;
-    P.over = { win: true, text: 'Thắng trận', side: 'ta', reason: 'Đã hạ hết quân địch' }; P.ver++;
+    const o = P.over ? null : Core.outcome(P.S);
+    if (!o) return false;
+    clearSel(P); P.mode = 'cho'; P.queue = []; P.act = null; P.banner = null; P.anim = null;
+    P.over = { win: o.win, type: o.type, text: o.win ? 'Thắng trận' : 'Thua trận', side: o.win ? 'ta' : 'dich', reason: o.reason, turns: P.S.turn }; P.ver++;
     return true;
   }
   // Lưu tạm được không (GDD 5.4): lượt ta, không có gì đang chạy, chưa chọn quân hoặc mới chọn (chưa đi).

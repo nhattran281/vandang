@@ -6,7 +6,9 @@ const src = f => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8');
 const { Core, Play, Save } = vm.runInNewContext(['34-core.js', '36-combat.js', '36-play.js', '37-skills.js', '38-ai.js', '39-level.js', '39-save.js'].map(src).join('\n') + '\n({ Core, Play, Save })', {});
 const eq = (a, b, m) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b), m);
 const rd = p => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
-const DATA = { terrain: rd('data/terrain.json'), units: rd('data/units.json'), classes: rd('data/classes.json'), weapons: rd('data/weapons.json'), skills: rd('data/skills.json'), ai: rd('data/ai.json'), campaign: rd('data/campaign.json'), maps: {} };
+const DATA = { terrain: rd('data/terrain.json'), units: rd('data/units.json'), classes: rd('data/classes.json'), weapons: rd('data/weapons.json'), skills: rd('data/skills.json'), ai: rd('data/ai.json'), maps: {} };
+// Chiến dịch thử 2 chương trên map thử (chapters.json thật bắt đầu từ Ch.1, kiểm ở test_chapter.js).
+DATA.chapters = { chapters: [{ id: 'thu', name: 'Map thử', map: 'thu', win: 'rout' }, { id: 'hanhvi', name: 'Map thử hành vi', map: 'hanhvi', win: 'rout' }] };
 for (const f of fs.readdirSync(path.join(ROOT, 'data/maps'))) if (f.endsWith('.json')) { const m = rd('data/maps/' + f); DATA.maps[m.id] = m; }
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok', name); };
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -49,9 +51,9 @@ function runTurns(P, k) {
 const fresh = (mode, seed) => { const C = Save.newCampaign(DATA, { mode: mode || 'casual', seed: seed || 7 }); const r = Save.startChapter(C, DATA); return { C, S: r.S, P: Play.create(r.S, DATA, r.seed) }; };
 
 // ---------- Dữ liệu chương ----------
-t('campaign.json hợp lệ; chương lỗi bị bắt', () => {
+t('danh sách chương hợp lệ; chương lỗi bị bắt', () => {
   eq(Save.validateCampaign(DATA), []);
-  const D = clone(DATA); D.campaign.chapters.push({ id: 'thu', map: 'khong_co' });
+  const D = clone(DATA); D.chapters.chapters.push({ id: 'thu', map: 'khong_co' });
   assert.strictEqual(Save.validateCampaign(D).length, 2);
 });
 
@@ -66,7 +68,7 @@ t('Chơi mới: JSON có phiên bản, chế độ tử vong, chương 0; đầu
   for (const u of S.units) { assert.strictEqual(u.hp, u.stats.hp); eq(u.res, u.resMax); }
 });
 t('chương Vùng Chết bật chết vĩnh viễn ở cả Casual', () => {
-  const D = clone(DATA); D.campaign.chapters[0].deadzone = true;
+  const D = clone(DATA); D.chapters.chapters[0].rules = { deadZone: true };
   assert.strictEqual(Save.startChapter(Save.newCampaign(D, { mode: 'casual' }), D).S.mode, 'deadzone');
 });
 

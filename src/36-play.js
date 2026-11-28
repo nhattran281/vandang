@@ -15,11 +15,14 @@
 //   P.act = hành động chờ chạy sau khi đi xong; P.lastPlan = kế hoạch gần nhất, P.lastAct = kết quả Core.aiAct gần nhất (để soi).
 //   Hành vi (38-ai.js): quân 'cho_tam' được đánh thức thì đặt u.awake; đạo tặc thoát thì u.escaped (hp = 0, biến khỏi bàn cờ).
 // P.over: trận đã kết thúc (Đăng/Linh ngã → thua) — mọi thao tác bị khóa.
+// P.levelUp (tuần 5): { list: growth.levels + growth.ranks, t } — bảng "Lên cấp" sau trận; chạm (Play.tap / dismissLevel) hoặc hết LEVEL_TIME thì đóng.
+//   Trong lúc hiện bảng, mọi thứ khác tạm dừng (busy). P.lastGrowth = growth log gần nhất (39-level).
 // S.phase: 'ta' | 'dich' | 'npc'. Hết lượt NPC thì sang lượt ta mới (S.turn + 1).
 const Play = (() => {
   const STEP_TIME = .16;   // giây mỗi ô khi đi (nhịp hiển thị; logic chốt ngay khi ra lệnh)
   const BANNER_TIME = 1.1; // băng chữ đầu mỗi phe
   const GAP_TIME = .18;    // nghỉ giữa hai quân máy
+  const LEVEL_TIME = 6;    // bảng Lên cấp tự đóng sau (giây)
   const ORDER = ['ta', 'dich', 'npc'], NAME = { ta: 'Phe ta', dich: 'Phe địch', npc: 'NPC' };
   // Nhịp phát lại trận (giây). Mỗi đòn: vung → trúng ở IMPACT → HP tụt trong DRAIN → nghỉ tới hết STRIKE.
   const STRIKE_TIME = .9, IMPACT = .28, DRAIN = .35, POPUP = .85, KO_TIME = .8, END_TIME = .45;
@@ -27,14 +30,14 @@ const Play = (() => {
 
   function create(S, data, seed) {
     const P = { S, data, mode: 'cho', unit: null, R: null, target: null, path: null, anim: null, undo: null, banner: null, queue: [], gap: 0, ver: 0,
-      rng: Core.rng(seed != null ? seed : 1), targets: [], foe: null, fc: null, wpns: [], wpn: null, battle: null, lastFight: null, over: null, act: null, lastPlan: null, lastAct: null };
+      rng: Core.rng(seed != null ? seed : 1), targets: [], foe: null, fc: null, wpns: [], wpn: null, battle: null, lastFight: null, over: null, act: null, lastPlan: null, lastAct: null, levelUp: null, lastGrowth: null };
     P.banner = { text: `Lượt ${S.turn} · ${NAME.ta}`, side: 'ta', t: 0, dur: BANNER_TIME };
     return P;
   }
 
   // Quân có nhận lệnh được không: quân ta, còn sống, chưa đi, đang lượt ta.
   const ready = (P, u) => !!(u && u.side === 'ta' && u.hp > 0 && !u.done && P.S.phase === 'ta');
-  const busy = P => !!(P.over || P.banner || P.anim || P.battle || P.mode === 'may');
+  const busy = P => !!(P.over || P.levelUp || P.banner || P.anim || P.battle || P.mode === 'may');
 
   function clearSel(P) { P.mode = 'cho'; P.unit = null; P.R = null; P.target = null; P.path = null; P.undo = null; P.targets = []; P.foe = null; P.fc = null; P.wpns = []; P.wpn = null; P.ver++; }
   function select(P, u) { P.mode = 'chon'; P.unit = u; P.R = Core.reachable(P.S, u, P.data); P.target = null; P.path = null; P.ver++; }
@@ -56,6 +59,7 @@ const Play = (() => {
   // Trả về: 'chon' · 'dich' (đặt ô đích) · 'di' (ra lệnh đi) · 'quaduoc' (ô chỉ đi qua) · 'huy' · 'xem' · 'ban' (đang bận / đang ở menu)
   //   Khi chọn mục tiêu: 'dubao' (hiện bảng dự báo) · 'danh' (chạm lại mục tiêu đang xem = xác nhận) · 'bodubao' · 'menu' (quay lại menu)
   function tap(P, x, y) {
+    if (P.levelUp) { dismissLevel(P); return 'lencap'; }
     if (busy(P) || P.mode === 'menu' || P.S.phase !== 'ta') return 'ban';
     const S = P.S, onMap = x !== null && x !== undefined && Core.inside(S, x, y), u = onMap ? Core.unitAt(S, x, y) : null;
     if (P.mode === 'muctieu') {
@@ -148,13 +152,15 @@ const Play = (() => {
     const a = P.unit, d = P.foe, hp0 = { [a.uid]: a.hp, [d.uid]: d.hp };
     if (P.wpn) equip(a, P.wpn);
     const res = Core.fight(a, d, ctxOf(P, a, d));
+    const growth = Core.awardCombat(a, d, res, P.data, P.rng);   // EXP / lên cấp / hạng vũ khí (39-level), hiện sau khi phát lại
     a.done = true; P.undo = null;
-    P.battle = { a, d, res, hp0, t: 0, dur: res.strikes.length * STRIKE_TIME + (res.outcome ? KO_TIME : 0) + END_TIME };
+    P.battle = { a, d, res, hp0, growth, t: 0, dur: res.strikes.length * STRIKE_TIME + (res.outcome ? KO_TIME : 0) + END_TIME };
     P.mode = 'danh'; P.targets = []; P.ver++;
     return true;
   }
   function endBattle(P) {
     const b = P.battle; P.battle = null; P.lastFight = b.res; clearSel(P);
+    showGrowth(P, b.growth);
     const o = b.res.outcome;
     if (o && o.gameOver) { P.over = { text: 'Thua trận', side: 'dich', reason: (o.uid === b.a.uid ? b.a : b.d).name + ' đã ngã' }; P.ver++; return; }
     if (P.S.phase !== 'ta') { P.mode = 'may'; P.gap = GAP_TIME; return; }   // trận của quân máy: đi tiếp quân sau
@@ -176,7 +182,7 @@ const Play = (() => {
     });
     const tKO = st.length * STRIKE_TIME, o = b.res.outcome;
     const ko = o && b.t >= tKO ? { uid: o.uid, result: o.result, k: Math.min(1, (b.t - tKO) / KO_TIME) } : null;
-    return { a: b.a, d: b.d, fc: b.res.forecast, hp, cur, pops, ko, t: b.t, dur: b.dur };
+    return { a: b.a, d: b.d, fc: b.res.forecast, hp, cur, pops, ko, t: b.t, dur: b.dur, exp: !cur && b.t >= tKO && b.growth ? b.growth.exp : null };
   }
   // HP của uid sau đòn thứ j (đọc ngược nhật ký).
   function hpAfter(st, j, uid, hp0) { for (let i = j; i >= 0; i--) if (st[i].to === uid) return st[i].targetHp; return hp0[uid]; }
@@ -205,14 +211,24 @@ const Play = (() => {
     const hp0 = tg ? { [u.uid]: u.hp, [tg.uid]: tg.hp } : null;
     const r = Core.aiAct(S, u, a, P.data, { rng: P.rng, mode: S.mode || 'casual' });
     P.lastAct = r; P.ver++;
-    if (!r.ok || !r.combat || !r.combat.strikes.length) return false;
+    if (!r.ok || !r.combat || !r.combat.strikes.length) { if (r.ok) showGrowth(P, r.growth); return false; }
     const res = r.combat;
-    P.battle = { a: u, d: tg, res, hp0, t: 0, dur: res.strikes.length * STRIKE_TIME + (res.outcome ? KO_TIME : 0) + END_TIME };
+    P.battle = { a: u, d: tg, res, hp0, growth: r.growth, t: 0, dur: res.strikes.length * STRIKE_TIME + (res.outcome ? KO_TIME : 0) + END_TIME };
     return true;
   }
 
+  // ----- Lên cấp (tuần 5) -----
+  // Ghi growth log gần nhất; có lên cấp / tăng hạng vũ khí thì mở bảng Lên cấp.
+  function showGrowth(P, g) {
+    if (!g) return; P.lastGrowth = g;
+    const list = g.levels.map(l => Object.assign({ kind: 'lv' }, l)).concat(g.ranks.map(r => Object.assign({ kind: 'rank' }, r)));
+    if (list.length) { P.levelUp = { list, t: 0, dur: LEVEL_TIME }; P.ver++; }
+  }
+  function dismissLevel(P) { if (!P.levelUp) return false; P.levelUp = null; P.ver++; return true; }
+
   function update(P, dt) {
     if (P.over) return;
+    if (P.levelUp) { P.levelUp.t += dt; if (P.levelUp.t >= P.levelUp.dur) dismissLevel(P); return; }
     if (P.battle) { P.battle.t += dt; if (P.battle.t >= P.battle.dur) endBattle(P); return; }
     if (P.banner) { P.banner.t += dt; if (P.banner.t >= P.banner.dur) { P.banner = null; P.ver++; } return; }
     const a = P.anim;
@@ -245,5 +261,5 @@ const Play = (() => {
 
   const left = P => P.S.units.filter(u => ready(P, u)).length;
 
-  return { create, ready, busy, select, cancel, tap, wait, undo, endTurn, update, animPos, left, targets, targetsOf, usableWeapons, attack, aim, cycleWeapon, back, confirm, battleView, STEP_TIME, STRIKE_TIME, IMPACT };
+  return { create, ready, busy, dismissLevel, LEVEL_TIME, select, cancel, tap, wait, undo, endTurn, update, animPos, left, targets, targetsOf, usableWeapons, attack, aim, cycleWeapon, back, confirm, battleView, STEP_TIME, STRIKE_TIME, IMPACT };
 })();

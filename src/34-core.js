@@ -55,7 +55,7 @@ const Core = (() => {
     }
     return errs;
   }
-  // Mục roster: chuỗi id mẫu, hoặc { tpl, ai } để gắn hành vi AI riêng cho quân này (GDD 4; ghi đè ai của mẫu).
+  // Mục roster: chuỗi id mẫu, hoặc { tpl, ai, lv } để gắn hành vi AI riêng (GDD 4; ghi đè ai của mẫu) / đổi cấp (địch tự sinh chỉ số theo cấp, GDD 5.2).
   const rosterTpl = e => typeof e === 'string' ? e : e && e.tpl;
 
   // ---------- Vũ khí (GDD 2.4, 2.5) ----------
@@ -104,13 +104,70 @@ const Core = (() => {
     return errs;
   }
 
-  // Tạo một đơn vị từ mẫu. Chỉ số = bản sao stats của mẫu; hp hiện tại = hp tối đa.
-  function makeUnit(tplId, data, side, x, y, uid) {
+  // ---------- Class & chỉ số (GDD 5.2, chốt tuần 5) ----------
+  // Nhân vật riêng (mẫu có unique: true — Đăng, Linh, Trấn, sau này boss có tên): base class + base cá nhân (đã tính sẵn cấp gia nhập).
+  // Quân thường (địch, NPC, lính) tự sinh theo cấp: + floor((lv − 1) × growth class / 100). Không phụ thuộc phe.
+  // Growth khi lên cấp = growth class + growth cá nhân, kẹp ≥ 0 (chỉ quân ta dùng, 39-level.js).
+  function classOf(tpl, data) {
+    const C = data.classes && data.classes.classes[tpl.class];
+    if (!C) throw new Error(`mẫu ${tpl.name}: không có class '${tpl.class}' trong data/classes.json`);
+    return C;
+  }
+  const maxLv = data => (data.classes && data.classes.maxLv) || 20;
+  function statsOf(tpl, data, lv) {
+    const C = classOf(tpl, data), b = tpl.base || {}, out = {}, auto = !tpl.unique;
+    lv = lv || tpl.lv || 1;
+    for (const k of STAT_KEYS) out[k] = ((C.base[k] | 0) + (b[k] | 0)) + (auto ? Math.floor((lv - 1) * (C.growth[k] | 0) / 100) : 0);
+    return out;
+  }
+  function growthOf(tpl, data) {
+    const C = classOf(tpl, data), g = tpl.growth || {}, out = {};
+    for (const k of STAT_KEYS) out[k] = Math.max(0, (C.growth[k] | 0) + (g[k] | 0));
+    return out;
+  }
+  // Điểm kinh nghiệm vũ khí cần cho từng hạng (weapons.json → weaponExp.rank).
+  const RANK_EXP_DEF = { E: 0, C: 30, A: 80, S: 150 };
+  const rankExp = data => Object.assign({}, RANK_EXP_DEF, ((data.weapons || {}).weaponExp || {}).rank);
+
+  // Kiểm tra classes.json + class/base/growth/cấp của các mẫu đơn vị và lv trong roster các map. Trả về mảng lỗi.
+  function validateClasses(data) {
+    const errs = [], C = data.classes;
+    if (!C) return ['thiếu data/classes.json'];
+    const ML = maxLv(data);
+    for (const id in C.classes) {
+      const c = C.classes[id];
+      for (const k of STAT_KEYS) {
+        if (!Number.isInteger(c.base && c.base[k])) fail(errs, `class ${id}: thiếu base.${k}`);
+        if (!(Number.isInteger(c.growth && c.growth[k]) && c.growth[k] >= 0)) fail(errs, `class ${id}: growth.${k} phải là số nguyên ≥ 0`);
+      }
+    }
+    for (const t in data.units.templates) {
+      const tpl = data.units.templates[t];
+      if (tpl.stats) fail(errs, `mẫu ${t}: không ghi stats thẳng nữa, dùng class + base`);
+      if (!C.classes[tpl.class]) { fail(errs, `mẫu ${t}: class lạ '${tpl.class}'`); continue; }
+      for (const f of ['base', 'growth']) for (const k in tpl[f] || {}) if (!STAT_KEYS.includes(k) || !Number.isInteger(tpl[f][k])) fail(errs, `mẫu ${t}: ${f}.${k} lạ`);
+      if (!(Number.isInteger(tpl.lv || 1) && (tpl.lv || 1) >= 1 && (tpl.lv || 1) <= ML)) fail(errs, `mẫu ${t}: lv phải là 1–${ML}`);
+      const s = statsOf(tpl, data, 1);
+      if (s.hp < 1 || STAT_KEYS.some(k => s[k] < 0)) fail(errs, `mẫu ${t}: chỉ số âm hoặc hp < 1`);
+    }
+    for (const id in data.maps || {}) for (const c in data.maps[id].roster || {}) data.maps[id].roster[c].forEach((e, i) => {
+      if (e && typeof e === 'object' && e.lv !== undefined && !(Number.isInteger(e.lv) && e.lv >= 1 && e.lv <= ML)) fail(errs, `map ${id} roster.${c}[${i}]: lv phải là 1–${ML}`);
+    });
+    return errs;
+  }
+
+  // Tạo một đơn vị từ mẫu. Chỉ số theo class (statsOf); hp hiện tại = hp tối đa. opts.lv ghi đè cấp (roster { tpl, lv }).
+  function makeUnit(tplId, data, side, x, y, uid, opts) {
     const tpl = data.units.templates[tplId];
     if (!tpl) throw new Error('không có mẫu đơn vị ' + tplId);
-    const stats = {}; for (const k of STAT_KEYS) stats[k] = tpl.stats[k] | 0;
-    const u = { uid, tpl: tplId, name: tpl.name, title: tpl.title || '', side, x, y, lv: tpl.lv || 1, exp: 0, moveType: tpl.moveType || 'bo', tags: (tpl.tags || []).slice(), stats, hp: stats.hp, done: false };
+    const lv = Math.min(maxLv(data), (opts && opts.lv) || tpl.lv || 1);
+    const stats = statsOf(tpl, data, lv);
+    const u = { uid, tpl: tplId, cls: tpl.class, name: tpl.name, title: tpl.title || '', side, x, y, lv, exp: 0, moveType: tpl.moveType || 'bo', tags: (tpl.tags || []).slice(), stats, hp: stats.hp, done: false };
+    u.growth = growthOf(tpl, data);
+    if (tpl.boss) u.boss = true;
     u.ranks = Object.assign({}, tpl.ranks);
+    // Điểm kinh nghiệm vũ khí: bắt đầu bằng mức của hạng hiện có (GDD 2.5).
+    const RE = rankExp(data); u.wexp = {}; for (const ty in u.ranks) u.wexp[ty] = RE[u.ranks[ty]] | 0;
     u.inventory = (tpl.weapons || []).map(id => makeWeapon(id, data));
     equipFirst(u);
     // Kỹ năng + tài nguyên mỗi trận (GDD 2.6): resMax lấy từ mẫu, res hồi đầy khi tạo đơn vị / đầu trận.
@@ -138,9 +195,9 @@ const Core = (() => {
       const next = { A: 0, E: 0, N: 0, C: 0 }; let uid = 1;
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
         const c = m.units[y][x]; if (c === '.') continue;
-        const e = m.roster[c][next[c]++], id = rosterTpl(e);
+        const e = m.roster[c][next[c]++], id = rosterTpl(e), lv = e && typeof e === 'object' ? e.lv : undefined;
         if (c === 'C') S.chests.push({ x, y, item: id, open: false });
-        else { const u = makeUnit(id, data, SIDES[c], x, y, uid++); if (e && e.ai) Object.assign(u.ai, e.ai); S.units.push(u); }
+        else { const u = makeUnit(id, data, SIDES[c], x, y, uid++, { lv }); if (e && e.ai) Object.assign(u.ai, e.ai); S.units.push(u); }
       }
     }
     return S;
@@ -267,5 +324,5 @@ const Core = (() => {
     return { terrain, height, units };
   }
 
-  return { rng, validateMap, loadMap, makeUnit, makeWeapon, canWield, usable, equipFirst, validateWeapons, RANKS, inside, tile, terrainOf, moveCost, unitAt, chestAt, openChest, isExit, escape, toAscii, STAT_KEYS, heightRule, canStep, stepCost, reachable, pathTo, canStopAt };
+  return { rng, validateMap, loadMap, makeUnit, validateClasses, statsOf, growthOf, classOf, maxLv, rankExp, makeWeapon, canWield, usable, equipFirst, validateWeapons, RANKS, inside, tile, terrainOf, moveCost, unitAt, chestAt, openChest, isExit, escape, toAscii, STAT_KEYS, heightRule, canStep, stepCost, reachable, pathTo, canStopAt };
 })();

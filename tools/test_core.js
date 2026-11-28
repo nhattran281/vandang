@@ -2,10 +2,10 @@
 const fs = require('fs'), path = require('path'), vm = require('vm'), assert = require('assert');
 const ROOT = path.dirname(__dirname);
 const rd = p => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
-const DATA = { terrain: rd('data/terrain.json'), units: rd('data/units.json'), weapons: rd('data/weapons.json'), skills: rd('data/skills.json'), ai: rd('data/ai.json'), maps: {} };
+const DATA = { terrain: rd('data/terrain.json'), units: rd('data/units.json'), classes: rd('data/classes.json'), weapons: rd('data/weapons.json'), skills: rd('data/skills.json'), ai: rd('data/ai.json'), maps: {} };
 for (const f of fs.readdirSync(path.join(ROOT, 'data/maps'))) if (f.endsWith('.json')) { const m = rd('data/maps/' + f); DATA.maps[m.id] = m; }
 const src = f => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8');
-const { Core, Play } = vm.runInNewContext(src('34-core.js') + '\n' + src('36-combat.js') + '\n' + src('36-play.js') + '\n' + src('37-skills.js') + '\n' + src('38-ai.js') + '\n({ Core, Play })', {});
+const { Core, Play } = vm.runInNewContext(src('34-core.js') + '\n' + src('36-combat.js') + '\n' + src('36-play.js') + '\n' + src('37-skills.js') + '\n' + src('38-ai.js') + '\n' + src('39-level.js') + '\n({ Core, Play })', {});
 const eq = (a, b) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b)); // mảng từ vm khác realm nên so qua JSON
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok', name); };
 

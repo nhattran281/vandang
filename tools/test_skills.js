@@ -5,7 +5,7 @@ const src = f => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8');
 const Core = vm.runInNewContext(src('34-core.js') + '\n' + src('36-combat.js') + '\n' + src('37-skills.js') + '\nCore', {});
 const eq = (a, b) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b)); // mảng từ vm khác realm nên so qua JSON
 const rd = p => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
-const DATA = { terrain: rd('data/terrain.json'), units: rd('data/units.json'), weapons: rd('data/weapons.json'), skills: rd('data/skills.json') };
+const DATA = { terrain: rd('data/terrain.json'), units: rd('data/units.json'), classes: rd('data/classes.json'), weapons: rd('data/weapons.json'), skills: rd('data/skills.json') };
 const clone = o => JSON.parse(JSON.stringify(o));
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok', name); };
 

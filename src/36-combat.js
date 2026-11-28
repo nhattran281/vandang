@@ -108,7 +108,7 @@ Object.assign(Core, (() => {
         tg.hp = Math.max(0, tg.hp - damage);
         if (w && w.maxUses) { w.uses--; broke = w.uses <= 0; }   // độ bền: trừ khi trúng
       }
-      log.push({ who, from: src.uid, to: tg.uid, hit: h.hit, crit, damage, rolls: h.rolls, targetHp: tg.hp, broke });
+      log.push({ who, from: src.uid, to: tg.uid, hit: h.hit, crit, damage, rolls: h.rolls, targetHp: tg.hp, broke, wid: w ? w.id : null, wtype: w ? w.type : null });   // wid/wtype: cho EXP vũ khí (39-level)
       if (tg.hp <= 0) { fallen = tg; break; }
     }
     // Vũ khí gãy → tự đổi sang cái tiếp theo trong túi (nếu có) cho lượt sau.

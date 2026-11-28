@@ -1,6 +1,11 @@
 {
   "_doc": "Vũ khí (GDD 2.4, 2.5). Số liệu TẠM, chỉnh ở tuần 11. rank: hạng cần để cầm (E→C→A→S). uses: độ bền, CHỈ vũ khí mạnh (bạc, cổ vật, huyền thoại) mới có; trừ 1 mỗi đòn trúng. range: [min, max]. effective: khóa trong 'effectiveness', gắn theo loại vũ khí.",
   "ranks": ["E", "C", "A", "S"],
+  "weaponExp": {
+    "_doc": "Điểm kinh nghiệm vũ khí (GDD 2.5, chốt tuần 5). Mỗi trận mà đơn vị phe ta đánh trúng ít nhất 1 đòn bằng vũ khí (kể cả phản đòn; không tính kỹ năng) → +perBattle điểm cho loại vũ khí đó (vũ khí ghi wexp riêng thì dùng số đó). rank: điểm tích lũy cần để đạt hạng. Đơn vị bắt đầu ở hạng X thì có sẵn điểm của hạng X.",
+    "perBattle": 2,
+    "rank": { "E": 0, "C": 30, "A": 80, "S": 150 }
+  },
   "effectiveness": {
     "_doc": "Khắc chế Người – Ma – Yêu – Bay – Thủy (GDD 2.4). vs: nhãn mục tiêu; vsStatus: trạng thái mục tiêu (chỉ cần khớp một). mtMult nhân Uy lực trước khi trừ Thủ (kiểu effective FE); dmgMult nhân sát thương sau khi trừ Thủ (làm tròn xuống); hit cộng vào Tỷ lệ trúng trận trước khi kẹp 0–100.",
     "tru_ma":    { "name": "Trừ Ma",   "vs": ["Ma"],   "dmgMult": 1.5, "hit": 15 },

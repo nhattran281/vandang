@@ -270,7 +270,7 @@ Object.assign(Core, (() => {
   }
 
   // Chạy hành động của một kế hoạch (sau khi đã đặt u vào ô đứng). Dùng chung cho 36-play.js và tools/test_ai.js.
-  // ctx: { rng | seed, mode }. Trả về { ok, combat?, effects?, item?, loot?, error? } — combat là kết quả Core.fight để phát lại.
+  // ctx: { rng | seed, mode }. Trả về { ok, combat?, effects?, growth?, item?, loot?, error? } — combat là kết quả Core.fight để phát lại; growth: EXP/lên cấp/hạng vũ khí (39-level).
   function aiAct(S, u, a, data, ctx) {
     if (!a || u.hp <= 0) return { ok: false, error: 'không có hành động' };
     if (a.type === 'open') return Core.openChest(S, u, a.x, a.y);
@@ -281,9 +281,11 @@ Object.assign(Core, (() => {
       const w = a.slot >= 0 && u.inventory ? u.inventory[a.slot] : u.weapon, d = dist(u.x, u.y, tg.x, tg.y);
       if (!w || !withWeapon(u, w, () => Core.inRange(u, d))) return { ok: false, error: 'ngoài tầm' };
       u.weapon = w; if (u.inventory) { const i = u.inventory.indexOf(w); if (i > 0) { u.inventory.splice(i, 1); u.inventory.unshift(w); } }
-      return { ok: true, combat: Core.fight(u, tg, Object.assign({}, ctx, { distance: d, atkTerrain: Core.terrainOf(S, u.x, u.y, data), defTerrain: Core.terrainOf(S, tg.x, tg.y, data) })) };
+      const combat = Core.fight(u, tg, Object.assign({}, ctx, { distance: d, atkTerrain: Core.terrainOf(S, u.x, u.y, data), defTerrain: Core.terrainOf(S, tg.x, tg.y, data) }));
+      // EXP / lên cấp / hạng vũ khí (39-level): chỉ phe ta nhận (quân ta do AI điều khiển, hoặc quân ta phản đòn khi bị địch đánh).
+      return { ok: true, combat, growth: Core.awardCombat(u, tg, combat, data, Core.growthRng(ctx)) };
     }
-    if (a.type === 'skill') { const r = Core.useSkill(S, u, a.skill, a.tx, a.ty, data, ctx); return r.ok ? { ok: true, combat: r.combat, effects: r.effects } : r; }
+    if (a.type === 'skill') { const r = Core.useSkill(S, u, a.skill, a.tx, a.ty, data, ctx); return r.ok ? { ok: true, combat: r.combat, effects: r.effects, growth: Core.awardSkill(S, u, r, data, Core.growthRng(ctx)) } : r; }
     return { ok: false, error: 'hành động lạ ' + a.type };
   }
 

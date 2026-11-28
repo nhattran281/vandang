@@ -85,6 +85,7 @@ function hudAction(act) {
   else if (act === 'quaylai') { ok = Play.back(P); if (ok) selectTile({ x: P.unit.x, y: P.unit.y }); }
   else if (act === 'vukhitruoc' || act === 'vukhisau') ok = Play.cycleWeapon(P, act === 'vukhitruoc' ? -1 : 1);
   else if (act === 'xacnhan') { ok = Play.confirm(P); if (ok) G.sel = null; }
+  else if (act === 'lencap') ok = Play.dismissLevel(P);
   G.last = act; return ok;
 }
 
@@ -106,6 +107,7 @@ function initInput() {
   window.addEventListener('keydown', e => {
     const s = G.sel; let m = null;
     const P = G.play;
+    if (P.levelUp) { hudAction('lencap'); return; }
     if (P.mode === 'menu') { if (e.key === 'Enter' || e.key === ' ') hudAction('cho'); else if (e.key === 'Escape' || e.key === 'Backspace') hudAction('hoantac'); else if (e.key === 'x' || e.key === 'X') hudAction('danh'); return; }
     if (P.mode === 'muctieu') { if (e.key === 'Escape' || e.key === 'Backspace') hudAction('quaylai'); else if (P.fc && (e.key === 'Enter' || e.key === ' ')) hudAction('xacnhan'); else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') hudAction(e.key === 'ArrowLeft' ? 'vukhitruoc' : 'vukhisau'); else if (e.key === 'Tab') { e.preventDefault(); const l = P.targets, i = (l.indexOf(P.foe) + 1) % l.length; Play.aim(P, l[i]); selectTile(l[i]); } return; }
     if (e.key === 'Escape') { Play.cancel(P); G.sel = null; }

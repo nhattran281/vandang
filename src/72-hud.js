@@ -29,7 +29,11 @@ const HUD = {
       const lines = this.describe(S, sel.x, sel.y);
       const lh = fs * 1.35, bw = Math.min(W - sl - sr - pad * 2, 420 * d), bh = lines.length * lh + pad * 1.2, bx = sl + pad, by = H - sb - pad - bh;
       this.panel(c, bx, by, bw, bh); top = by;
-      lines.forEach((l, i) => { c.font = `${i === 0 ? 600 : 400} ${fs}px system-ui, sans-serif`; c.fillStyle = i === 0 ? '#ffd27a' : '#e6dccb'; c.fillText(l, bx + pad * .8, by + pad * .6 + i * lh); });
+      lines.forEach((l, i) => {
+        const txt = typeof l === 'string' ? l : l.t, tx = bx + pad * .8, ty = by + pad * .6 + i * lh;
+        c.font = `${i === 0 ? 600 : 400} ${fs}px system-ui, sans-serif`; c.fillStyle = i === 0 ? '#ffd27a' : '#e6dccb'; c.fillText(txt, tx, ty);
+        if (l.bar != null) { const x0 = tx + c.measureText(txt).width + pad * .6; const ww = Math.max(0, bx + bw - pad * .8 - x0); c.fillStyle = 'rgba(255,255,255,.14)'; c.fillRect(x0, ty + fs * .3, ww, 7 * d); c.fillStyle = '#8fc4ff'; c.fillRect(x0, ty + fs * .3, ww * Math.min(1, l.bar), 7 * d); }   // thanh EXP
+      });
     }
     // Menu hành động sau khi đi: Đánh (khi có địch trong tầm) / Chờ / Hoàn tác. Kỹ năng, Vật phẩm, Mở rương thêm sau.
     if (P.mode === 'menu' && !P.anim) {
@@ -50,7 +54,8 @@ const HUD = {
       this.forecast(c, bv.a, bv.d, bv.fc, sl + pad, H - sb - pad, Math.min(W - sl - sr - pad * 2, 400 * d), d, bv);
       this.popups(c, bv, d);
     }
-    if (P.banner) this.banner(c, P.banner, W, H, d);
+    if (P.levelUp) this.levelUp(c, P.levelUp, W, H, d);
+    else if (P.banner) this.banner(c, P.banner, W, H, d);
     if (P.over) this.banner(c, { text: P.over.text, sub: P.over.reason, side: P.over.side, t: 1, dur: 2 }, W, H, d);
   },
   // Một hàng nút canh phải, nằm trên mép `bottom`. Nút cuối là nút chính.
@@ -125,10 +130,42 @@ const HUD = {
       const cur = bv.cur, ko = bv.ko; let msg = '';
       if (ko) { const u = ko.uid === a.uid ? a : b; msg = u.name + (ko.result === 'dead' ? ' đã chết' : ' rút lui'); }
       else if (cur) { const u = cur.s.from === a.uid ? a : b; msg = u.name + (cur.s.who === 'D' ? ' phản đòn' : ' tấn công') + (cur.i >= 2 ? ' (đánh đôi)' : ''); }
+      if (!cur && bv.exp && bv.exp.length) msg = (msg ? msg + ' · ' : '') + bv.exp.map(e => `${e.name} +${e.gained} EXP`).join(' · ');
       c.font = `400 ${fs * .8}px system-ui, sans-serif`; c.fillStyle = DIM; c.fillText(msg, cm, yy);
     }
     c.textAlign = 'left';
     return h;
+  },
+  // Bảng "Lên cấp" (tuần 5): mỗi đơn vị một khối — Lv cũ → mới, lưới chỉ số với +1 tô vàng; tăng hạng vũ khí một dòng. Chạm để đóng.
+  levelUp(c, L, W, H, d) {
+    const fs = 15 * d, pad = 12 * d, lh = fs * 1.45, NAME = { hp: 'HP', str: 'Sức', mag: 'Phép', skl: 'Kỹ', spd: 'Tốc', lck: 'May', def: 'Thủ', res: 'Kháng', con: 'Thể', mov: 'Di' };
+    const keys = Core.STAT_KEYS, rows = Math.ceil(keys.length / 2);
+    let h = pad * 2 + fs * .9;
+    for (const it of L.list) h += it.kind === 'lv' ? fs * 1.6 + rows * lh + pad * .4 : lh;
+    const w = Math.min(W - 24 * d, 360 * d), x = (W - w) / 2, y = Math.max(12 * d, (H - h) / 2);
+    this.btns.push({ x: 0, y: 0, w: W, h: H, act: 'lencap' });   // chạm bất kỳ đâu để đóng
+    c.fillStyle = 'rgba(4,5,9,.55)'; c.fillRect(0, 0, W, H);   // làm tối nền cho dễ đọc
+    this.panel(c, x, y, w, h); c.fillStyle = 'rgba(8,10,16,.6)'; c.fillRect(x, y, w, h);
+    c.textBaseline = 'top'; let yy = y + pad;
+    for (const it of L.list) {
+      if (it.kind === 'rank') {
+        const ty = (DATA.weapons.types[it.type] || {}).name || it.type;
+        c.font = `600 ${fs}px system-ui, sans-serif`; c.fillStyle = '#ffd27a'; c.textAlign = 'left';
+        c.fillText(`${it.name} · Hạng ${ty}: ${it.from} → ${it.to}`, x + pad, yy); yy += lh; continue;
+      }
+      c.font = `700 ${fs * 1.15}px system-ui, sans-serif`; c.fillStyle = '#8fc4ff'; c.textAlign = 'left'; c.fillText(it.name, x + pad, yy);
+      c.fillStyle = '#ffd27a'; c.textAlign = 'right'; c.fillText(`Lên cấp!  Lv ${it.from} → ${it.to}`, x + w - pad, yy);
+      yy += fs * 1.6;
+      keys.forEach((k, i) => {
+        const col = i < rows ? 0 : 1, row = i % rows, cx = x + pad + col * (w - pad * 2) / 2, cw = (w - pad * 2) / 2 - pad, ty = yy + row * lh, g = it.gains[k] || 0;
+        c.font = `400 ${fs}px system-ui, sans-serif`; c.fillStyle = 'rgba(200,190,170,.85)'; c.textAlign = 'left'; c.fillText(NAME[k], cx, ty);
+        c.font = `700 ${fs}px system-ui, sans-serif`; c.fillStyle = g ? '#ffd04a' : '#f2e6cc'; c.textAlign = 'right';
+        c.fillText(String(it.stats[k]) + (g ? `  +${g}` : '     '), cx + cw, ty);
+      });
+      yy += rows * lh + pad * .4;
+    }
+    c.font = `400 ${fs * .8}px system-ui, sans-serif`; c.fillStyle = 'rgba(200,190,170,.7)'; c.textAlign = 'center';
+    c.fillText('Chạm để tiếp tục', x + w / 2, yy); c.textAlign = 'left';
   },
   hpBar(c, x, y, w, h, k, col) {
     c.fillStyle = 'rgba(0,0,0,.6)'; c.fillRect(x, y, w, h);
@@ -187,6 +224,7 @@ const HUD = {
   hint() {
     const P = G.play, n = Play.left(P);
     if (P.over) return 'Trận đã kết thúc · tải lại trang để chơi lại';
+    if (P.levelUp) return 'Chạm để tiếp tục';
     if (P.banner) return '';
     if (P.battle) return 'Đang giao chiến…';
     if (P.mode === 'muctieu') return P.fc ? (P.wpns.length > 1 ? '◀ ▶ đổi vũ khí · chạm lại mục tiêu hoặc Đánh để xác nhận' : 'Chạm lại mục tiêu hoặc nút Đánh để xác nhận') : 'Chạm quân địch trong ô đỏ để xem dự báo';
@@ -204,7 +242,14 @@ const HUD = {
     out.push(`Đi: Bộ ${cost('bo')} · Nhẹ ${cost('nhe')} · Bay ${cost('bay')} · Thủy ${cost('thuy')}`);
     out.push(`Né ${sg(T.avo)} · Thủ ${sg(T.def)}` + (T.heal ? ` · hồi ${T.heal}% HP` : ''));
     const u = Core.unitAt(S, x, y);
-    if (u) { const s = u.stats, side = { ta: 'Ta', dich: 'Địch', npc: 'NPC' }[u.side]; out.push(`${u.name}${u.title ? ' · ' + u.title : ''} [${side}] Lv${u.lv}  HP ${u.hp}/${s.hp}` + (u.done ? ' · đã đi' : '')); out.push(`Sức ${s.str} Phép ${s.mag} Kỹ ${s.skl} Tốc ${s.spd} May ${s.lck} Thủ ${s.def} Kháng ${s.res} Di ${s.mov}`); }
+    if (u) { const s = u.stats, side = { ta: 'Ta', dich: 'Địch', npc: 'NPC' }[u.side]; out.push(`${u.name}${u.title ? ' · ' + u.title : ''} [${side}] Lv${u.lv}  HP ${u.hp}/${s.hp}` + (u.done ? ' · đã đi' : '')); out.push(`Sức ${s.str} Phép ${s.mag} Kỹ ${s.skl} Tốc ${s.spd} May ${s.lck} Thủ ${s.def} Kháng ${s.res} Di ${s.mov}`);
+      if (u.side === 'ta') {   // tuần 5: thanh EXP + hạng vũ khí (điểm tới hạng kế)
+        const per = DATA.classes.expPerLevel || 100, max = u.lv >= Core.maxLv(DATA), RE = Core.rankExp(DATA);
+        const rk = Object.keys(u.ranks || {}).map(ty => { const r = u.ranks[ty], nx = Core.RANKS[Core.RANKS.indexOf(r) + 1];
+          return `${(DATA.weapons.types[ty] || {}).name || ty} ${r}` + (nx ? ` ${(u.wexp && u.wexp[ty]) | 0}/${RE[nx]}` : ''); }).join(' · ');
+        out.push({ t: max ? 'EXP --' : `EXP ${u.exp}/${per}`, bar: max ? 1 : u.exp / per });
+        if (rk) out.push('Hạng: ' + rk);
+      } }
     const k = Core.chestAt(S, x, y); if (k) out.push('Rương: ' + k.item);
     return out;
   },

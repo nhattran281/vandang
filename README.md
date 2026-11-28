@@ -23,6 +23,8 @@ python3 tools/build.py      # nối data/*.json + src/*.js + three.js -> index.h
 node tools/test_core.js     # test logic lõi, không cần trình duyệt
 node tools/test_combat.js   # test công thức chiến đấu (2RN, dự báo, trận đấu)
 node tools/test_skills.js   # test khung kỹ năng (mục tiêu, tài nguyên, sát thương kỹ năng)
+node tools/test_ai.js       # test AI chấm điểm + AI vs AI
+node tools/test_level.js    # test bảng class, EXP, lên cấp, hạng vũ khí
 ```
 
 Mở `index.html` (chạy được từ `file://`). Cờ URL: `#map=thu`, `#biome=fen`, `#sel=4,5` (chọn sẵn ô), `#seed=N`, `#fps=1`, `#manual=1`.

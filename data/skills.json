@@ -1,0 +1,53 @@
+{
+  "_doc": "Kỹ năng chủ động (GDD 2.6). Số liệu TẠM, chỉnh ở tuần 11. Kỹ năng thay cho hành động Đánh. Tài nguyên riêng mỗi trận, hồi đầy đầu trận; mức tối đa ghi ở mẫu đơn vị (units.json → resources). range: [min, max] tính theo ô (Manhattan) từ ô đang đứng; min 0 = dùng lên chính mình / ô mình đứng. max ≤ rangeCap (≈ 1/3 cạnh ngắn map chuẩn 12×16).",
+  "rangeCap": 4,
+  "resources": {
+    "dau_den":  { "name": "Dầu đèn" },
+    "nhip_dan": { "name": "Nhịp đàn" },
+    "linh_luc": { "name": "Linh lực" },
+    "niem_luc": { "name": "Niệm lực" }
+  },
+  "_targets": "target: enemy = đơn vị phe địch còn sống · ally = đơn vị không thù địch còn sống (gồm chính mình nếu range min = 0) · tile = ô bất kỳ trong map.",
+  "effects": {
+    "_doc": "Loại hiệu ứng. live = chạy thật ngay; còn lại chỉ ghi nhận vào kết quả (applied: false), làm thật ở tuần 8. if: điều kiện (vs: nhãn mục tiêu, vsStatus: trạng thái mục tiêu, tileFlag: cờ địa hình ô đích, onHit: chỉ khi đòn sát thương trúng).",
+    "damage": { "live": true,  "_doc": "Một đòn theo công thức 36-combat (Công = Phép/Sức + mt, trúng, chí mạng, khắc chế theo dmgType = loại vũ khí trong weapons.json). Không phản đòn, không đánh đôi." },
+    "status": { "live": false, "_doc": "Gây trạng thái id (GDD 2.7) trong turns lượt." },
+    "push":   { "live": false, "_doc": "Đẩy mục tiêu ra xa người dùng dist ô." },
+    "light":  { "live": false, "_doc": "Nguồn sáng tại ô đích: xua sương bán kính radius trong turns lượt." },
+    "ignite": { "live": false, "_doc": "Đốt ô đích trong turns lượt (chặn đường, gây Bỏng)." },
+    "shield": { "live": false, "_doc": "Khiên hấp thụ amount sát thương trong turns lượt." }
+  },
+  "skills": {
+    "soi": {
+      "name": "Soi", "owner": "dang", "resource": "dau_den", "cost": 1,
+      "target": "tile", "range": [0, 3],
+      "desc": "Thắp đèn tại một ô, xua sương quanh đó.",
+      "effects": [ { "type": "light", "radius": 2, "turns": 3 } ]
+    },
+    "tran": {
+      "name": "Trấn", "owner": "dang", "resource": "dau_den", "cost": 2,
+      "target": "enemy", "range": [1, 1],
+      "desc": "Giơ đèn Trấn: đẩy lùi một địch kề bên; Ma thì bị choáng.",
+      "effects": [
+        { "type": "push", "dist": 1 },
+        { "type": "status", "id": "choang", "turns": 1, "if": { "vs": ["Ma"] } }
+      ]
+    },
+    "hoa": {
+      "name": "Hỏa", "owner": "dang", "resource": "dau_den", "cost": 2,
+      "target": "enemy", "range": [1, 2],
+      "desc": "Phóng lửa đèn: sát thương phép, khắc Ma; trúng thì gây Bỏng, đốt được rừng.",
+      "effects": [
+        { "type": "damage", "dmgType": "lua_den", "mt": 6, "hit": 80, "crit": 0 },
+        { "type": "status", "id": "bong", "turns": 3, "if": { "onHit": true } },
+        { "type": "ignite", "turns": 2, "if": { "tileFlag": "dotDuoc" } }
+      ]
+    },
+    "ho": {
+      "name": "Hộ", "owner": "dang", "resource": "dau_den", "cost": 1,
+      "target": "ally", "range": [0, 1],
+      "desc": "Bọc lửa đèn quanh mình hoặc đồng đội kề bên thành khiên.",
+      "effects": [ { "type": "shield", "amount": 5, "turns": 1 } ]
+    }
+  }
+}

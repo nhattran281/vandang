@@ -107,6 +107,9 @@ const Core = (() => {
     u.ranks = Object.assign({}, tpl.ranks);
     u.inventory = (tpl.weapons || []).map(id => makeWeapon(id, data));
     equipFirst(u);
+    // Kỹ năng + tài nguyên mỗi trận (GDD 2.6): resMax lấy từ mẫu, res hồi đầy khi tạo đơn vị / đầu trận.
+    u.skills = (tpl.skills || []).slice();
+    u.resMax = Object.assign({}, tpl.resources); u.res = Object.assign({}, u.resMax);
     return u;
   }
 

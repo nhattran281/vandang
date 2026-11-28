@@ -1,9 +1,10 @@
 {
-  "_doc": "Mẫu đơn vị. stats theo GDD 2.2 (hp str mag skl spd lck def res con mov). Số liệu TẠM để dựng khung, chốt ở tuần 3 và tuần 5. weapons: id trong data/weapons.json, cái đầu tiên cầm được là vũ khí đang trang bị. ranks: hạng vũ khí theo loại (E/C/A/S). look: gợi ý cho phần vẽ (phần logic bỏ qua).",
+  "_doc": "Mẫu đơn vị. stats theo GDD 2.2 (hp str mag skl spd lck def res con mov). Số liệu TẠM để dựng khung, chốt ở tuần 3 và tuần 5. weapons: id trong data/weapons.json, cái đầu tiên cầm được là vũ khí đang trang bị. ranks: hạng vũ khí theo loại (E/C/A/S). skills: id trong data/skills.json; resources: mức tối đa tài nguyên mỗi trận (GDD 2.6). look: gợi ý cho phần vẽ (phần logic bỏ qua).",
   "templates": {
     "dang": {
       "name": "Đăng", "title": "Người Giữ Đèn", "tags": ["Nguoi"], "moveType": "bo", "lv": 1,
       "weapons": ["kiem_sat", "lua_den"], "ranks": { "kiem": "C", "lua_den": "E" },
+      "skills": ["soi", "tran", "hoa", "ho"], "resources": { "dau_den": 6 },
       "stats": { "hp": 20, "str": 6, "mag": 3, "skl": 7, "spd": 8, "lck": 5, "def": 5, "res": 3, "con": 8, "mov": 5 },
       "look": { "rig": "foot", "tint": [0.55, 0.62, 0.8], "weapon": "greatsword", "plate": true, "lantern": "blue" }
     },

@@ -4,7 +4,8 @@
 // weapon: tạo bằng Core.makeWeapon từ data/weapons.json:
 //   { id, name, type, rank, magic, mt, hit, crit, wt, minRange, maxRange, effective:[luật khắc chế], uses?, maxUses? }
 // Khắc chế (GDD 2.4) so w.effective với tags của mục tiêu (Nguoi/Ma/Yeu/Bay/Thuy) và statuses (vd 'uot').
-// ctx: { distance, atkTerrain, defTerrain, rng | seed, mode:'casual'|'classic'|'deadzone', noCounter }
+// ctx: { distance, atkTerrain, defTerrain, rng | seed, mode:'casual'|'classic'|'deadzone', noCounter, noDouble }
+//   noDouble: bên đánh chỉ ra 1 đòn (kỹ năng sát thương, 37-skills.js).
 //   atkTerrain/defTerrain: ô địa hình của terrain.json (dùng khóa avo, def) — lấy bằng Core.terrainOf.
 Object.assign(Core, (() => {
   const DOUBLE_AS = 4;            // AS chênh ≥ 4 → đánh đôi
@@ -71,6 +72,7 @@ Object.assign(Core, (() => {
     const a = side(att, def, ctx.atkTerrain, ctx.defTerrain), d = side(def, att, ctx.defTerrain, ctx.atkTerrain);
     a.canAttack = inRange(att, distance);
     d.canCounter = a.canAttack && !ctx.noCounter && def.hp > 0 && inRange(def, distance);
+    if (ctx.noDouble) a.doubles = false;
     a.strikes = a.canAttack ? (a.doubles ? 2 : 1) : 0;
     d.strikes = d.canCounter ? (d.doubles ? 2 : 1) : 0;
     return { distance, attacker: a, defender: d };

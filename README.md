@@ -14,6 +14,7 @@ Nền kỹ thuật fork từ [Cinderwatch](https://github.com/kevintngo/cinderwa
 - Map thử 12×16 hiển thị bằng đồ họa Cinderwatch: địa hình, độ cao, tháp đèn, miếu, cầu, quân ta/địch/NPC, rương. Chạm/nhấn một ô để xem thông số.
 - Tuần 2: tìm đường (`Core.reachable/pathTo/canStopAt`); chạm quân ta để tô vùng đi, chạm ô đích để xem đường, chạm lần nữa để đi; chạm ngoài vùng để hủy. Đi xong chọn **Chờ** hoặc **Hoàn tác**; nút **Hết lượt**; vòng lượt Ta → Địch → NPC (máy tạm thời chỉ tiến về quân ta gần nhất). Bàn phím: mũi tên + Enter, Esc hủy/hoàn tác, E hết lượt.
 - Tuần 3: công thức chiến đấu `src/36-combat.js` (`Core.forecast`, `Core.fight`; 2RN, khắc chế, độ bền, hạng vũ khí). Đi xong, nếu có địch trong tầm vũ khí đang cầm thì menu có **Đánh** → ô đỏ là tầm đánh, chạm một địch để xem **bảng dự báo** (2 cột ta/địch: vũ khí, HP, ST ×2 khi đánh đôi, Trúng, Chí mạng, Độ bền nếu có; khắc chế ghi tên luật màu cam; bên không phản đòn được hiện "–"). Chạm lại mục tiêu hoặc nút **Đánh** để xác nhận → phát lại nhật ký đòn (số bay lên, HP tụt dần, Trượt / Chí mạng), quân về 0 HP rút lui (Casual). Đăng/Linh ngã → Thua trận. Đổi vũ khí tự do (GDD 2.5): mục tiêu tính theo mọi vũ khí dùng được trong túi; thanh **◀ ▶** trên bảng dự báo đổi giữa các món với tới mục tiêu; xác nhận thì món đó thành món đang cầm (lên đầu túi) và quyết định phản đòn lượt địch. Bàn phím: X = Đánh, Tab = đổi mục tiêu, ←/→ = đổi vũ khí, Enter = xác nhận, Esc = quay lại.
+- Tuần 3: khung kỹ năng (logic thuần, chưa có UI) `src/37-skills.js` + `data/skills.json` (GDD 2.6): `Core.skillTargets`, `Core.useSkill`, `Core.skillForecast`, `Core.canAfford`, `Core.refillResources`, `Core.validateSkills`. Tài nguyên riêng mỗi trận (Dầu đèn, Nhịp đàn, Linh lực, Niệm lực), hồi đầy đầu trận; tầm ≤ `rangeCap` (4 ≈ 1/3 cạnh map). Đăng có Soi · Trấn · Hỏa · Hộ (6 Dầu đèn). Kỹ năng sát thương dùng công thức + khắc chế của `36-combat.js` (1 đòn, không phản đòn, không đánh đôi); trạng thái/môi trường mới ghi nhận vào kết quả, làm thật ở tuần 8.
 
 ## Chạy, build, test
 
@@ -21,6 +22,7 @@ Nền kỹ thuật fork từ [Cinderwatch](https://github.com/kevintngo/cinderwa
 python3 tools/build.py      # nối data/*.json + src/*.js + three.js -> index.html
 node tools/test_core.js     # test logic lõi, không cần trình duyệt
 node tools/test_combat.js   # test công thức chiến đấu (2RN, dự báo, trận đấu)
+node tools/test_skills.js   # test khung kỹ năng (mục tiêu, tài nguyên, sát thương kỹ năng)
 ```
 
 Mở `index.html` (chạy được từ `file://`). Cờ URL: `#map=thu`, `#biome=fen`, `#sel=4,5` (chọn sẵn ô), `#seed=N`, `#fps=1`, `#manual=1`.
@@ -38,6 +40,7 @@ CHROME=/usr/bin/google-chrome node tools/cdp.js "" 390,844 "tapat:__vd.screenOfT
 | --- | --- |
 | `data/terrain.json` | Bảng địa hình (GDD 3.1): chi phí đi theo loại quân, Né, Thủ |
 | `data/units.json` | Mẫu đơn vị: chỉ số (GDD 2.2), nhãn, loại di chuyển, `look` cho phần vẽ |
+| `data/skills.json` | Kỹ năng chủ động (GDD 2.6): tài nguyên, giá, tầm, loại mục tiêu, hiệu ứng dạng dữ liệu |
 | `data/maps/*.json` | Map: 3 lớp ASCII + roster |
 | `src/00-util` … `29-biome`, `40-fx`, `41-weather`, `50-rig`, `51-bestiary`, `70-pixelfont`, `80-audio` | Module nền giữ từ Cinderwatch |
 | `src/11-shared.js` | Phần dùng chung tách từ Cinderwatch: vật liệu, `Soup.seg`, `clothPanel`, thư viện đồ vật `PROP` |
@@ -45,6 +48,7 @@ CHROME=/usr/bin/google-chrome node tools/cdp.js "" 390,844 "tapat:__vd.screenOfT
 | `src/35-board.js` | Vẽ bàn cờ ô vuông từ trạng thái map |
 | `src/36-combat.js` | **Công thức chiến đấu** (thuần dữ liệu): `Core.forecast` (không đổi trạng thái), `Core.fight` (ghi HP, trả nhật ký đòn) |
 | `src/36-play.js` | **Điều khiển lượt** (thuần dữ liệu): chọn quân → ô đích → đi → Đánh/Chờ/Hoàn tác, chọn mục tiêu → dự báo → xác nhận → phát lại (`battleView`); vòng lượt Ta → Địch → NPC, nước đi tạm cho quân máy |
+| `src/37-skills.js` | **Khung kỹ năng** (thuần dữ liệu): mục tiêu, tài nguyên, `Core.useSkill` (sát thương thật, trạng thái/môi trường ghi nhận) |
 | `src/56-overlay.js` | Tô vùng đi được (xanh = dừng được, tím = chỉ đi qua), vẽ đường đi; tô tầm đánh và mục tiêu (đỏ) |
 | `src/55-units.js` | Vẽ đơn vị bằng rig người của Cinderwatch (tạm) |
 | `src/72-hud.js` | HUD (font hệ thống, có dấu tiếng Việt; số sát thương dùng `70-pixelfont`): menu, bảng dự báo, bảng phát lại trận |

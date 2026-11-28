@@ -131,8 +131,15 @@ function hudAction(act) {
   else if (act === 'vukhitruoc' || act === 'vukhisau') ok = Play.cycleWeapon(P, act === 'vukhitruoc' ? -1 : 1);
   else if (act === 'xacnhan') { ok = Play.confirm(P); if (ok) G.sel = null; }
   else if (act === 'lencap') ok = Play.dismissLevel(P);
+  else if (act === 'tua') { ok = Play.nextSpeed(P); if (ok) saveSpeed(P.ff); }
   G.last = act; return ok;
 }
+
+// Tốc độ tua lượt địch là thói quen của người chơi: nhớ qua các trận (localStorage). Công cụ chụp/quay (#manual) luôn bắt đầu x1.
+const FF_KEY = 'vandang.ff';
+function loadSpeed() { if (HASH.manual) return 1; try { const v = +localStorage.getItem(FF_KEY); return Play.SPEEDS.includes(v) && localStorage.getItem(FF_KEY) !== null ? v : 1; } catch (e) { return 1; } }
+function saveSpeed(v) { if (HASH.manual) return; try { localStorage.setItem(FF_KEY, String(v)); } catch (e) {} }
+const placeOf = (x, y) => { const w = tileWorld(G.map, x, y); return { x: w.x, y: standY(G.map, x, y), z: w.z }; };
 
 function initInput() {
   const el = R.canvas, pts = new Map(); let drag = 0, pinch = 0;
@@ -160,6 +167,7 @@ function initInput() {
     if (P.mode === 'muctieu') { if (e.key === 'Escape' || e.key === 'Backspace') hudAction('quaylai'); else if (P.fc && (e.key === 'Enter' || e.key === ' ')) hudAction('xacnhan'); else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') hudAction(e.key === 'ArrowLeft' ? 'vukhitruoc' : 'vukhisau'); else if (e.key === 'Tab') { e.preventDefault(); const l = P.targets, i = (l.indexOf(P.foe) + 1) % l.length; Play.aim(P, l[i]); selectTile(l[i]); } return; }
     if (e.key === 'Escape') { Play.cancel(P); G.sel = null; }
     else if (e.key === 'e' || e.key === 'E') hudAction('hetluot');
+    else if (e.key === 't' || e.key === 'T') hudAction('tua');
     else if (e.key === 'Enter' || e.key === ' ') tapTile(s);
     else if (e.key === 'f' || e.key === 'F' || e.key === '0') camReset();
     else if (e.key === 'ArrowUp' || e.key === 'w') m = [0, -1]; else if (e.key === 'ArrowDown' || e.key === 's') m = [0, 1];
@@ -172,7 +180,8 @@ function step(dt) {
   G.t += dt; SH.uTime.value = G.t;
   beginParts();
   updateFX(dt, G.t);
-  if (!G.title && !G.intro) Play.update(G.play, dt);
+  if (!G.title && !G.intro) Play.advance(G.play, dt);   // advance = update, trừ khi đang bỏ qua lượt địch
+  Anim.sync(G.play, placeOf);   // tua Timeline GSAP tới đồng hồ của Play (54-anim)
   if (G.play.over && !G.ended) { G.ended = true; onBattleEnd(G.play.over); }
   if (G.toast && (G.toast.t += dt) >= G.toast.dur) G.toast = null;
   drawUnits(G.map, G.t, G.play);
@@ -239,7 +248,7 @@ function boot() {
   if (HASH.biome) S.biome = HASH.biome;
   const B = G.B = buildGridBoard(S, +(HASH.seed || 1));
   R.scene.add(B.group); activateGridBoard(B);
-  G.play = Play.create(S, DATA, seed);
+  G.play = Play.create(S, DATA, seed); Play.setSpeed(G.play, loadSpeed());
   if (S.chapterName) G.play.banner.text = S.chapterName + ' · Lượt ' + S.turn;
   if (S.goal) { G.play.banner.sub = 'Mục tiêu: ' + Core.goalText(S.goal, DATA).win; G.play.banner.dur = 2.6; }
   if (S.mode === 'deadzone') { G.play.banner.sub = 'Vùng Chết · quân ngã sẽ chết vĩnh viễn'; G.play.banner.dur = 2.6; }
@@ -252,7 +261,7 @@ function boot() {
   R.canvas.addEventListener('webglcontextrestored', () => location.reload());
   document.addEventListener('visibilitychange', () => { if (!document.hidden) _last = performance.now(); });
   // Móc cho công cụ (tools/cdp.js, tools/record.js): __vd, giữ tên cũ __cw để công cụ Cinderwatch vẫn chạy.
-  window.__vd = window.__cw = { G, R, CAM, LT, FX, Core, Play, Save, OVL, DATA, step, pickTile, screenOfTile, selectTile, tapTile, hudAction, HUD, tick(dt, render) { R.frameDt = dt; step(dt); R.fade = 1; applyCamera(); if (render) renderFrame(); HUD.draw(); } };
+  window.__vd = window.__cw = { G, R, CAM, LT, FX, Core, Play, Save, OVL, DATA, Anim, step, pickTile, screenOfTile, selectTile, tapTile, hudAction, HUD, tick(dt, render) { R.frameDt = dt; step(dt); R.fade = 1; applyCamera(); if (render) renderFrame(); HUD.draw(); } };
   if (HASH.sel) { const [x, y] = HASH.sel.split(',').map(Number); selectTile({ x, y }); }
   if (HASH.ff) { const n = Math.round(+HASH.ff * 30); for (let i = 0; i < n; i++) step(1 / 30); R.fade = 1; }
   if (HASH.cam) window.__vd.lock = HASH.cam.split(',').map(Number);

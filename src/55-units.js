@@ -26,28 +26,25 @@ function initUnitViews(S) {
 
 function drawUnits(S, t, P) {
   UNITS.torch.length = 0;
-  const I = KIT.item, bv = Play.battleView(P);   // I: vũ khí / khiên theo tên trong look
+  const I = KIT.item, bv = Anim.battle(P);   // I: vũ khí / khiên theo tên trong look; bv: trận đang phát (GSAP Timeline, 54-anim)
   for (const v of UNITS.views) {
     const u = v.u, look = v.look;
     // Trong lúc phát lại trận, quân đã về 0 HP vẫn đứng cho tới khi tới đoạn rút lui.
     const inFight = bv && (bv.a === u || bv.d === u), ko = inFight && bv.ko && bv.ko.uid === u.uid ? bv.ko.k : 0;
     if ((u.hp <= 0 && !inFight) || ko >= 1) { if (v.flame) v.flame.on = 0; if (v.light) v.light.alive = false; continue; }
-    // Đang đi: nội suy giữa hai ô, nảy nhẹ khi đổi bậc; quay mặt theo hướng bước.
-    const a = Play.animPos(P, u), picked = !a && P.mode === 'chon' && P.unit === u;
-    if (a) {
-      const p0 = tileWorld(S, a.from[0], a.from[1]), p1 = tileWorld(S, a.to[0], a.to[1]);
-      const y0 = standY(S, a.from[0], a.from[1]), y1 = standY(S, a.to[0], a.to[1]);
-      v.x = lerp(p0.x, p1.x, a.k); v.z = lerp(p0.z, p1.z, a.k);
-      v.y = lerp(y0, y1, a.k) + Math.sin(a.k * PI) * (.12 + Math.abs(y1 - y0) * .6);
-      v.yaw = Math.atan2(a.dx, a.dy);
-    } else { const p = tileWorld(S, u.x, u.y); v.x = p.x; v.z = p.z; v.y = standY(S, u.x, u.y) + (picked ? .12 + .08 * Math.sin(t * 6) : 0); }
-    // Đánh: quay mặt vào đối thủ, vung vũ khí (rig.atk), bên bị trúng giật lùi + chớp; rút lui = chìm xuống và mờ dần.
+    // Đang đi: tư thế do Timeline đi (54-anim) tính — giữa hai ô, nảy nhẹ khi đổi bậc, quay mặt theo hướng bước.
+    const a = Anim.walk(P, u), picked = !a && P.mode === 'chon' && P.unit === u;
+    if (a) { v.x = a.x; v.z = a.z; v.y = a.y; v.yaw = a.yaw; }
+    else { const p = tileWorld(S, u.x, u.y); v.x = p.x; v.z = p.z; v.y = standY(S, u.x, u.y) + (picked ? .12 + .08 * Math.sin(t * 6) : 0); }
+    // Đánh (Timeline trận, 54-anim): quay mặt vào đối thủ, lao tới + vung vũ khí (rig.atk) rồi lùi về; bên bị trúng giật lùi + chớp,
+    // trượt thì né sang bên; rút lui = chìm xuống và mờ dần. Đánh gần lao ~1/3 ô, đánh xa chỉ nhích ~1/8 ô.
     let atk = -1, flinch = 0, flash = 0;
     if (inFight) {
-      const o = bv.a === u ? bv.d : bv.a; v.yaw = Math.atan2(o.x - u.x, o.y - u.y);
-      const c = bv.cur;
-      if (c && c.s.from === u.uid) atk = c.atk;
-      if (c && c.s.to === u.uid && c.impact && c.s.hit) { const q = Math.max(0, 1 - (c.k - Play.IMPACT) / .3); flinch = q; flash = c.s.crit ? q : q * .5; }
+      const o = bv.a === u ? bv.d : bv.a, q = bv.U[u.uid]; v.yaw = Math.atan2(o.x - u.x, o.y - u.y);
+      const po = tileWorld(S, o.x, o.y), dx = po.x - v.x, dz = po.z - v.z, len = Math.hypot(dx, dz) || 1, n = Math.abs(o.x - u.x) + Math.abs(o.y - u.y);
+      const reach = q.lunge * (n <= 1 ? .34 : .12) * len / Math.max(1, n), side = q.dodge * .22 * len / Math.max(1, n);
+      v.x += dx / len * (reach - side * .4) + dz / len * side; v.z += dz / len * (reach - side * .4) - dx / len * side;
+      atk = q.atk; flinch = q.flinch; flash = q.flash;
       v.y -= ko * 1.6;
     }
     // Đã đi: tối và lạnh màu đi (kiểu FE: quân xám = hết lượt).

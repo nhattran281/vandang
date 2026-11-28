@@ -1868,6 +1868,9 @@ Object.assign(Core, (() => {
 // P.levelUp (tuần 5): { list: growth.levels + growth.ranks, t } — bảng "Lên cấp" sau trận; chạm (Play.tap / dismissLevel) hoặc hết LEVEL_TIME thì đóng.
 //   Trong lúc hiện bảng, mọi thứ khác tạm dừng (busy). P.lastGrowth = growth log gần nhất (39-level).
 // S.phase: 'ta' | 'dich' | 'npc'. Hết lượt NPC thì sang lượt ta mới (S.turn + 1).
+// P.ff (tuần 6): tốc độ phát lượt Địch/NPC — 1 · 2 · 4 · 0 = bỏ qua hoạt ảnh. Chỉ nhân dt cho băng chữ, đi, trận, nghỉ giữa quân;
+//   không đổi thứ tự tính toán hay số lần gọi RNG, nên kết quả trận như nhau ở mọi tốc độ. Bảng Lên cấp không bị tua.
+// Hoạt ảnh hiển thị (54-anim.js, GSAP Timeline) tua theo đồng hồ của Play (P.anim.t, P.battle.t); file này không dùng GSAP.
 const Play = (() => {
   const STEP_TIME = .16;   // giây mỗi ô khi đi (nhịp hiển thị; logic chốt ngay khi ra lệnh)
   const BANNER_TIME = 1.1; // băng chữ đầu mỗi phe
@@ -1877,10 +1880,13 @@ const Play = (() => {
   // Nhịp phát lại trận (giây). Mỗi đòn: vung → trúng ở IMPACT → HP tụt trong DRAIN → nghỉ tới hết STRIKE.
   const STRIKE_TIME = .9, IMPACT = .28, DRAIN = .35, POPUP = .85, KO_TIME = .8, END_TIME = .45;
   const FOES = { ta: ['dich'], dich: ['ta', 'npc'], npc: ['dich'] };   // ai đánh được ai
+  const TIMING = { STEP_TIME, STRIKE_TIME, IMPACT, DRAIN, POPUP, KO_TIME, END_TIME };   // dùng chung với Timeline (54-anim)
+  const SPEEDS = [1, 2, 4, 0];   // nút tua lượt địch: x1 → x2 → x4 → bỏ qua → x1
+  const SKIP_STEPS = 600;        // bỏ qua: tối đa số bước update trong một khung hình
 
   function create(S, data, seed) {
     const P = { S, data, mode: 'cho', unit: null, R: null, target: null, path: null, anim: null, undo: null, banner: null, queue: [], gap: 0, ver: 0,
-      rng: Core.rng(seed != null ? seed : 1), targets: [], foe: null, fc: null, wpns: [], wpn: null, battle: null, lastFight: null, over: null, act: null, lastPlan: null, lastAct: null, levelUp: null, lastGrowth: null };
+      rng: Core.rng(seed != null ? seed : 1), targets: [], foe: null, fc: null, wpns: [], wpn: null, battle: null, lastFight: null, over: null, act: null, lastPlan: null, lastAct: null, levelUp: null, lastGrowth: null, ff: 1 };
     P.banner = { text: `Lượt ${S.turn} · ${NAME.ta}`, side: 'ta', t: 0, dur: BANNER_TIME };
     return P;
   }
@@ -2092,9 +2098,22 @@ const Play = (() => {
   // Lưu tạm được không (GDD 5.4): lượt ta, không có gì đang chạy, chưa chọn quân hoặc mới chọn (chưa đi).
   const canSuspend = P => !P.over && P.S.phase === 'ta' && !busy(P) && (P.mode === 'cho' || P.mode === 'chon');
 
-  function update(P, dt) {
+  // ----- Tua nhanh lượt địch (tuần 6) -----
+  const ffActive = P => P.S.phase !== 'ta' && P.ff !== 1;
+  function setSpeed(P, v) { if (!SPEEDS.includes(v)) return false; P.ff = v; return true; }
+  function nextSpeed(P) { return setSpeed(P, SPEEDS[(SPEEDS.indexOf(P.ff) + 1) % SPEEDS.length]); }
+  // Hệ số nhân dt: lượt ta luôn 1; lượt Địch/NPC theo P.ff (0 = bỏ qua → Infinity: mỗi bước update xong ngay một việc).
+  const scaleOf = P => P.S.phase === 'ta' ? 1 : P.ff === 0 ? Infinity : P.ff;
+  // Một khung hình của vòng lặp game. Bỏ qua: chạy liền nhiều bước update tới khi về lượt ta / có bảng Lên cấp / hết trận.
+  function advance(P, dt) {
+    if (P.ff !== 0 || P.S.phase === 'ta' || P.levelUp || P.over) return update(P, dt);   // bảng Lên cấp vẫn đếm giờ thật
+    for (let i = 0; i < SKIP_STEPS && !P.over && !P.levelUp && P.S.phase !== 'ta'; i++) update(P, dt);
+  }
+
+  function update(P, dt0) {
     if (P.over) return;
-    if (P.levelUp) { P.levelUp.t += dt; if (P.levelUp.t >= P.levelUp.dur) dismissLevel(P); return; }
+    if (P.levelUp) { P.levelUp.t += dt0; if (P.levelUp.t >= P.levelUp.dur) dismissLevel(P); return; }
+    const dt = dt0 * scaleOf(P);
     if (P.battle) { P.battle.t += dt; if (P.battle.t >= P.battle.dur) endBattle(P); return; }
     if (!P.anim && checkWin(P)) return;
     if (P.banner) { P.banner.t += dt; if (P.banner.t >= P.banner.dur) { P.banner = null; P.ver++; } return; }
@@ -2128,7 +2147,7 @@ const Play = (() => {
 
   const left = P => P.S.units.filter(u => ready(P, u)).length;
 
-  return { create, ready, busy, canSuspend, won, checkWin, dismissLevel, LEVEL_TIME, select, cancel, tap, wait, undo, endTurn, update, animPos, left, targets, targetsOf, usableWeapons, attack, aim, cycleWeapon, back, confirm, battleView, STEP_TIME, STRIKE_TIME, IMPACT };
+  return { create, ready, busy, canSuspend, won, checkWin, dismissLevel, LEVEL_TIME, select, cancel, tap, wait, undo, endTurn, update, advance, setSpeed, nextSpeed, ffActive, SPEEDS, animPos, left, targets, targetsOf, usableWeapons, attack, aim, cycleWeapon, back, confirm, battleView, STEP_TIME, STRIKE_TIME, IMPACT, TIMING };
 })();
 
 // ===== Vân Đăng · Khung kỹ năng =====
@@ -3883,6 +3902,130 @@ function rigToad(e) {
   return M0;
 }
 
+// ===== Vân Đăng · Hoạt ảnh hiển thị bằng GSAP Timeline (tuần 6) =====
+// GDD mục 1: GSAP chỉ để PHÁT LẠI. Đường đi, kết quả từng đòn, HP, ai ngã… do logic (36-play, 36-combat) tính trước;
+// file này dựng Timeline từ dữ liệu đó và không ghi gì ngược vào logic.
+//
+// Đồng hồ: mọi Timeline tạo ở trạng thái paused và KHÔNG chạy theo ticker/đồng hồ thật của GSAP. Mỗi bước của vòng lặp game,
+// Anim.sync(P) tua Timeline tới đúng P.anim.t / P.battle.t (Play tăng hai giá trị này bằng dt của vòng lặp, kể cả khi tua x2/x4).
+// → cùng seed + cùng chuỗi dt = cùng giá trị ở từng khung hình; tools/record.js (dt = 1/60) chụp ra đúng từng khung như nhau.
+//
+// Đi:   mỗi ô một đoạn STEP_TIME: x/z tuyến tính, y = nền (tuyến tính) + nảy (sine lên rồi xuống), quay mặt theo hướng bước.
+// Trận: mỗi đòn một đoạn STRIKE_TIME: lao tới (lunge) + vung (atk) → ở IMPACT: trúng (giật lùi + chớp, HP tụt trong DRAIN)
+//       hoặc trượt (né sang bên) → số sát thương / "Trượt" bay lên trong POPUP → lùi về. Phản đòn và đánh đôi là các đòn
+//       tiếp theo trong nhật ký Core.fight. Hết đòn: bên ngã rút lui (chìm + mờ) trong KO_TIME, rồi +EXP tới hết trận.
+// Chạy được trong Node (tools/test_anim.js): chỉ cần biến toàn cục gsap; vị trí ô do hàm place(x, y) → {x, y, z} truyền vào.
+const Anim = (() => {
+  const GS = typeof gsap !== 'undefined' ? gsap : null;
+  if (GS) {
+    GS.ticker.lagSmoothing(0);                       // không tự bù khung hình chậm (đồng hồ là của game)
+    GS.defaults({ ease: 'none', overwrite: false, lazy: false });   // lazy: false → giá trị ghi ngay khi tua, không dồn sang tick sau
+    GS.config({ nullTargetWarn: false, autoSleep: 60 });
+  }
+  const T = () => Play.TIMING;
+  const NONE = { immediateRender: false };
+  const on = v => Object.assign({}, NONE, v);
+
+  // ----- Đi -----
+  // path: [[x,y],…] (ô đầu = ô đứng); place(x, y) → toạ độ thế giới. Trả về { tl, o } với o = tư thế đang hiện.
+  function buildWalk(path, place) {
+    const ST = T().STEP_TIME, p0 = place(path[0][0], path[0][1]);
+    const o = { x: p0.x, z: p0.z, base: p0.y, hop: 0, yaw: 0, k: 0 }, tl = GS.timeline({ paused: true });
+    for (let i = 0; i + 1 < path.length; i++) {
+      const [x0, y0] = path[i], [x1, y1] = path[i + 1], a = place(x0, y0), b = place(x1, y1), t0 = i * ST;
+      const hop = .12 + Math.abs(b.y - a.y) * .6;
+      tl.set(o, on({ yaw: Math.atan2(x1 - x0, y1 - y0) }), t0);
+      tl.fromTo(o, { x: a.x, z: a.z, base: a.y, k: 0 }, on({ x: b.x, z: b.z, base: b.y, k: 1, duration: ST, ease: 'none' }), t0);
+      tl.fromTo(o, { hop: 0 }, on({ hop, duration: ST / 2, ease: 'sine.out' }), t0);   // = hop·sin(k·π) như bản trước
+      tl.fromTo(o, { hop }, on({ hop: 0, duration: ST / 2, ease: 'sine.in' }), t0 + ST / 2);
+    }
+    if (path.length > 1) tl.set(o, on({ k: 1 }), (path.length - 1) * ST);
+    return { tl, o };
+  }
+
+  // ----- Trận -----
+  // b = P.battle { a, d, res: Core.fight, hp0, growth, dur }. Trả về { tl, V }; V là trạng thái hiển thị mà Timeline ghi vào.
+  function buildBattle(b) {
+    const { STRIKE_TIME: ST, IMPACT, DRAIN, POPUP, KO_TIME } = T(), st = b.res.strikes, n = st.length, o = b.res.outcome;
+    const pose = () => ({ atk: -1, lunge: 0, flinch: 0, flash: 0, dodge: 0 });
+    const V = { cur: -1, imp: 0, ko: 0, koOn: 0, exp: 0, end: 0, hp: Object.assign({}, b.hp0), U: { [b.a.uid]: pose(), [b.d.uid]: pose() }, pops: [] };
+    const tl = GS.timeline({ paused: true });
+    st.forEach((s, j) => {
+      const t0 = j * ST, F = V.U[s.from], D = V.U[s.to], ti = t0 + IMPACT;
+      tl.set(V, on({ cur: j, imp: 0 }), t0);
+      // Lao tới + vung (nhịp vung giữ như bản trước: atk 0 → 1 trong IMPACT/.45 giây), rồi lùi về chỗ.
+      tl.fromTo(F, { atk: 0 }, on({ atk: 1, duration: IMPACT / .45, ease: 'none' }), t0);
+      tl.fromTo(F, { lunge: 0 }, on({ lunge: 1, duration: IMPACT, ease: 'power2.in' }), t0);
+      tl.to(F, on({ lunge: 0, duration: ST - IMPACT - .12, ease: 'power2.out' }), ti);
+      tl.set(F, on({ atk: -1 }), t0 + ST - 1e-4);
+      tl.set(V, on({ imp: 1 }), ti);
+      if (s.hit) {
+        const fl = s.crit ? 1 : .5;
+        tl.fromTo(D, { flinch: 1, flash: fl }, on({ flinch: 0, flash: 0, duration: .3, ease: 'none' }), ti);
+        tl.to(V.hp, on({ [s.to]: s.targetHp, duration: DRAIN, ease: 'power1.out' }), ti);
+      } else {   // trượt: bên bị đánh né sang bên rồi về
+        tl.fromTo(D, { dodge: 0 }, on({ dodge: 1, duration: .14, ease: 'power2.out' }), ti - .1);
+        tl.to(D, on({ dodge: 0, duration: .3, ease: 'power1.inOut' }), ti + .12);
+      }
+      const p = { uid: s.to, hit: s.hit, crit: s.crit, damage: s.damage, broke: s.broke, from: s.from, age: 0, on: 0 };
+      V.pops.push(p);
+      tl.set(p, on({ on: 1 }), ti);
+      tl.fromTo(p, { age: 0 }, on({ age: 1, duration: POPUP, ease: 'none' }), ti);
+      tl.set(p, on({ on: 0 }), ti + POPUP);
+    });
+    const tKO = n * ST;
+    tl.set(V, on({ cur: -1, imp: 0, exp: 1 }), tKO);
+    if (o) { tl.set(V, on({ koOn: 1 }), tKO); tl.fromTo(V, { ko: 0 }, on({ ko: 1, duration: KO_TIME, ease: 'power1.in' }), tKO); }
+    tl.set(V, on({ end: 1 }), b.dur);   // ghim độ dài Timeline = b.dur (Play kết thúc trận đúng lúc này)
+    return { tl, V };
+  }
+
+  // ----- Đồng bộ với Play (gọi mỗi bước của vòng lặp game, sau Play.update) -----
+  const cur = { walk: null, wk: null, battle: null, bk: null };
+  const clampT = (t, d) => Math.max(0, Math.min(d, Number.isFinite(t) ? t : d));
+  // Tua tới t. Lần đầu (Timeline vừa dựng) phải ép vẽ: Timeline mới ở giây 0 mà tua tới 0 thì GSAP coi như không đổi, không ghi giá trị đầu.
+  function seek(tl, t) { if (tl.__fresh !== false) { tl.__fresh = false; tl.render(t, false, true); } else tl.totalTime(t); }
+  function sync(P, place) {
+    if (!GS) return;
+    if (cur.wk !== P.anim) {
+      if (cur.walk) cur.walk.tl.kill();
+      cur.wk = P.anim; cur.walk = P.anim && P.anim.path.length > 1 ? buildWalk(P.anim.path, place) : null;
+    }
+    if (cur.walk) seek(cur.walk.tl, clampT(P.anim.t, P.anim.dur));
+    if (cur.bk !== P.battle) {
+      if (cur.battle) cur.battle.tl.kill();
+      cur.bk = P.battle; cur.battle = P.battle ? buildBattle(P.battle) : null;
+    }
+    if (cur.battle) seek(cur.battle.tl, clampT(P.battle.t, P.battle.dur));
+  }
+  // Tư thế đang đi của u: { x, y, z, yaw, k } (toạ độ thế giới) hoặc null nếu u không đang đi.
+  function walk(P, u) {
+    const w = cur.walk; if (!w || !P.anim || cur.wk !== P.anim || P.anim.u !== u) return null;
+    return { x: w.o.x, y: w.o.base + w.o.hop, z: w.o.z, yaw: w.o.yaw, k: w.o.k };   // chép số, không trả đối tượng GSAP đang giữ
+  }
+  // Ảnh chụp trận đang phát (cùng dạng với Play.battleView để HUD dùng chung) + U: tư thế từng bên (atk, lunge, flinch, flash, dodge).
+  function battle(P) {
+    const B = cur.battle, b = P.battle; if (!B || !b || cur.bk !== b) return null;
+    // GSAP gắn thuộc tính _gsap vào đối tượng nó tween, nên chỉ chép đúng các trường cần (không chép nguyên đối tượng).
+    const V = B.V, st = b.res.strikes, o = b.res.outcome, hp = {}, U = {};
+    for (const u of [b.a, b.d]) {
+      hp[u.uid] = Math.round(V.hp[u.uid]);
+      const q = V.U[u.uid]; U[u.uid] = { atk: q.atk, lunge: q.lunge, flinch: q.flinch, flash: q.flash, dodge: q.dodge };
+    }
+    return {
+      a: b.a, d: b.d, fc: b.res.forecast, hp, U, t: b.t, dur: b.dur,
+      cur: V.cur >= 0 ? { i: V.cur, s: st[V.cur], impact: V.imp === 1 } : null,
+      pops: V.pops.filter(p => p.on === 1).map(p => ({ uid: p.uid, hit: p.hit, crit: p.crit, damage: p.damage, broke: p.broke, from: p.from, age: p.age })),
+      ko: o && V.koOn === 1 ? { uid: o.uid, result: o.result, k: V.ko } : null,
+      exp: V.cur < 0 && V.exp === 1 && b.growth ? b.growth.exp : null,
+    };
+  }
+  // Để test / soi: Timeline đang giữ.
+  const timelines = () => ({ walk: cur.walk && cur.walk.tl, battle: cur.battle && cur.battle.tl });
+  function reset() { if (cur.walk) cur.walk.tl.kill(); if (cur.battle) cur.battle.tl.kill(); cur.walk = cur.wk = cur.battle = cur.bk = null; }
+  return { ok: !!GS, buildWalk, buildBattle, sync, walk, battle, timelines, reset };
+})();
+
 // ===== Vân Đăng · Vẽ đơn vị =====
 // Dựng nhân vật bằng bộ phận có sẵn của Cinderwatch (50-rig người, 51-bestiary quái). Rig, màu, vũ khí, phụ kiện
 // đọc từ "look" trong data/units.json (xem units.json → _look). Hình dáng hiện là tạm; dựng nhân vật riêng ở tuần 7.
@@ -3911,28 +4054,25 @@ function initUnitViews(S) {
 
 function drawUnits(S, t, P) {
   UNITS.torch.length = 0;
-  const I = KIT.item, bv = Play.battleView(P);   // I: vũ khí / khiên theo tên trong look
+  const I = KIT.item, bv = Anim.battle(P);   // I: vũ khí / khiên theo tên trong look; bv: trận đang phát (GSAP Timeline, 54-anim)
   for (const v of UNITS.views) {
     const u = v.u, look = v.look;
     // Trong lúc phát lại trận, quân đã về 0 HP vẫn đứng cho tới khi tới đoạn rút lui.
     const inFight = bv && (bv.a === u || bv.d === u), ko = inFight && bv.ko && bv.ko.uid === u.uid ? bv.ko.k : 0;
     if ((u.hp <= 0 && !inFight) || ko >= 1) { if (v.flame) v.flame.on = 0; if (v.light) v.light.alive = false; continue; }
-    // Đang đi: nội suy giữa hai ô, nảy nhẹ khi đổi bậc; quay mặt theo hướng bước.
-    const a = Play.animPos(P, u), picked = !a && P.mode === 'chon' && P.unit === u;
-    if (a) {
-      const p0 = tileWorld(S, a.from[0], a.from[1]), p1 = tileWorld(S, a.to[0], a.to[1]);
-      const y0 = standY(S, a.from[0], a.from[1]), y1 = standY(S, a.to[0], a.to[1]);
-      v.x = lerp(p0.x, p1.x, a.k); v.z = lerp(p0.z, p1.z, a.k);
-      v.y = lerp(y0, y1, a.k) + Math.sin(a.k * PI) * (.12 + Math.abs(y1 - y0) * .6);
-      v.yaw = Math.atan2(a.dx, a.dy);
-    } else { const p = tileWorld(S, u.x, u.y); v.x = p.x; v.z = p.z; v.y = standY(S, u.x, u.y) + (picked ? .12 + .08 * Math.sin(t * 6) : 0); }
-    // Đánh: quay mặt vào đối thủ, vung vũ khí (rig.atk), bên bị trúng giật lùi + chớp; rút lui = chìm xuống và mờ dần.
+    // Đang đi: tư thế do Timeline đi (54-anim) tính — giữa hai ô, nảy nhẹ khi đổi bậc, quay mặt theo hướng bước.
+    const a = Anim.walk(P, u), picked = !a && P.mode === 'chon' && P.unit === u;
+    if (a) { v.x = a.x; v.z = a.z; v.y = a.y; v.yaw = a.yaw; }
+    else { const p = tileWorld(S, u.x, u.y); v.x = p.x; v.z = p.z; v.y = standY(S, u.x, u.y) + (picked ? .12 + .08 * Math.sin(t * 6) : 0); }
+    // Đánh (Timeline trận, 54-anim): quay mặt vào đối thủ, lao tới + vung vũ khí (rig.atk) rồi lùi về; bên bị trúng giật lùi + chớp,
+    // trượt thì né sang bên; rút lui = chìm xuống và mờ dần. Đánh gần lao ~1/3 ô, đánh xa chỉ nhích ~1/8 ô.
     let atk = -1, flinch = 0, flash = 0;
     if (inFight) {
-      const o = bv.a === u ? bv.d : bv.a; v.yaw = Math.atan2(o.x - u.x, o.y - u.y);
-      const c = bv.cur;
-      if (c && c.s.from === u.uid) atk = c.atk;
-      if (c && c.s.to === u.uid && c.impact && c.s.hit) { const q = Math.max(0, 1 - (c.k - Play.IMPACT) / .3); flinch = q; flash = c.s.crit ? q : q * .5; }
+      const o = bv.a === u ? bv.d : bv.a, q = bv.U[u.uid]; v.yaw = Math.atan2(o.x - u.x, o.y - u.y);
+      const po = tileWorld(S, o.x, o.y), dx = po.x - v.x, dz = po.z - v.z, len = Math.hypot(dx, dz) || 1, n = Math.abs(o.x - u.x) + Math.abs(o.y - u.y);
+      const reach = q.lunge * (n <= 1 ? .34 : .12) * len / Math.max(1, n), side = q.dodge * .22 * len / Math.max(1, n);
+      v.x += dx / len * (reach - side * .4) + dz / len * side; v.z += dz / len * (reach - side * .4) - dx / len * side;
+      atk = q.atk; flinch = q.flinch; flash = q.flash;
       v.y -= ko * 1.6;
     }
     // Đã đi: tối và lạnh màu đi (kiểu FE: quân xám = hết lượt).
@@ -4490,7 +4630,8 @@ const PX = (() => {
 // ===== Vân Đăng · HUD tạm =====
 // Chữ vẽ lên canvas #hud bằng font hệ thống (font pixel 70-pixelfont chưa có dấu tiếng Việt).
 // Tên map, gợi ý, thông tin ô, nút Hết lượt / menu hành động (tuần 2).
-// Tuần 3: nút Đánh, bảng dự báo dọc 2 cột (đọc P.fc = Core.forecast), bảng phát lại trận + số sát thương bay lên (đọc Play.battleView).
+// Tuần 3: nút Đánh, bảng dự báo dọc 2 cột (đọc P.fc = Core.forecast), bảng phát lại trận + số sát thương bay lên (tuần 6: đọc Anim.battle).
+// Tuần 6: nút tua lượt địch (x1 · x2 · x4 · Bỏ qua) ở góc trên phải, dưới Hết lượt / Lưu tạm.
 // Số sát thương dùng font pixel 70-pixelfont (chỉ chữ số); chữ có dấu dùng font hệ thống.
 const HUD = {
   ctx: null, btns: [],
@@ -4529,8 +4670,10 @@ const HUD = {
       this.button(c, 'Hết lượt', 'hetluot', W - sr - pad - 104 * d, st + pad, 104 * d, 44 * d, false);
       if (G.campaign && Play.canSuspend(P)) this.button(c, 'Lưu tạm', 'luutam', W - sr - pad - 104 * d, st + pad + 52 * d, 104 * d, 40 * d, false);
     }
+    // Nút tua lượt địch (tuần 6): luôn ở cùng chỗ khi đang trong trận, chỉnh trước được từ lượt ta.
+    if (!P.over) this.button(c, this.speedLabel(P), 'tua', W - sr - pad - 104 * d, st + pad + 100 * d, 104 * d, 40 * d, Play.ffActive(P));
     let top = H - sb - pad; // mép trên của khối dưới cùng
-    const sel = G.sel, bv = Play.battleView(P);
+    const sel = G.sel, bv = Anim.battle(P);   // trận đang phát: giá trị do GSAP Timeline ghi (54-anim)
     if (sel && (P.mode === 'cho' || P.mode === 'chon' || P.mode === 'menu' || P.mode === 'may')) {
       const lines = this.describe(S, sel.x, sel.y);
       const lh = fs * 1.35, bw = Math.min(W - sl - sr - pad * 2, 420 * d), bh = lines.length * lh + pad * 1.2, bx = sl + pad, by = H - sb - pad - bh;
@@ -4827,6 +4970,7 @@ const HUD = {
     if (b.sub) { c.font = `400 ${15 * d}px system-ui, sans-serif`; c.fillStyle = 'rgba(230,220,200,.85)'; c.fillText(b.sub, W / 2, y + h / 2 + 16 * d); }
     c.textAlign = 'left'; c.textBaseline = 'top'; c.globalAlpha = 1;
   },
+  speedLabel(P) { return P.ff === 0 ? 'Địch: Bỏ qua' : 'Địch: x' + P.ff; },
   // Chạm vào nút nào (toạ độ CSS px) → tên hành động hoặc null
   hit(cssX, cssY) {
     const k = R.dw / R.cssW, x = cssX * k, y = cssY * k;
@@ -4840,7 +4984,7 @@ const HUD = {
     if (P.banner) return '';
     if (P.battle) return 'Đang giao chiến…';
     if (P.mode === 'muctieu') return P.fc ? (P.wpns.length > 1 ? '◀ ▶ đổi vũ khí · chạm lại mục tiêu hoặc Đánh để xác nhận' : 'Chạm lại mục tiêu hoặc nút Đánh để xác nhận') : 'Chạm quân địch trong ô đỏ để xem dự báo';
-    if (P.mode === 'may') return (P.S.phase === 'npc' ? 'NPC' : 'Phe địch') + ' đang đi…';
+    if (P.mode === 'may') return (P.S.phase === 'npc' ? 'NPC' : 'Phe địch') + ' đang đi…' + (P.ff !== 1 ? ' (' + (P.ff ? 'x' + P.ff : 'bỏ qua') + ')' : '');
     if (P.mode === 'di') return 'Đang đi…';
     if (P.mode === 'menu') return Play.targets(P).length ? 'Chọn: Đánh · Chờ · Hoàn tác' : 'Chọn: Chờ (kết thúc) hoặc Hoàn tác (về ô cũ)';
     if (P.mode === 'chon') return P.target ? 'Chạm lần nữa để đi · chạm ngoài vùng để hủy' : G.last === 'quaduoc' ? 'Ô tím: chỉ đi qua, không dừng được' : 'Chạm ô xanh để xem đường · ngoài vùng để hủy';
@@ -5621,8 +5765,15 @@ function hudAction(act) {
   else if (act === 'vukhitruoc' || act === 'vukhisau') ok = Play.cycleWeapon(P, act === 'vukhitruoc' ? -1 : 1);
   else if (act === 'xacnhan') { ok = Play.confirm(P); if (ok) G.sel = null; }
   else if (act === 'lencap') ok = Play.dismissLevel(P);
+  else if (act === 'tua') { ok = Play.nextSpeed(P); if (ok) saveSpeed(P.ff); }
   G.last = act; return ok;
 }
+
+// Tốc độ tua lượt địch là thói quen của người chơi: nhớ qua các trận (localStorage). Công cụ chụp/quay (#manual) luôn bắt đầu x1.
+const FF_KEY = 'vandang.ff';
+function loadSpeed() { if (HASH.manual) return 1; try { const v = +localStorage.getItem(FF_KEY); return Play.SPEEDS.includes(v) && localStorage.getItem(FF_KEY) !== null ? v : 1; } catch (e) { return 1; } }
+function saveSpeed(v) { if (HASH.manual) return; try { localStorage.setItem(FF_KEY, String(v)); } catch (e) {} }
+const placeOf = (x, y) => { const w = tileWorld(G.map, x, y); return { x: w.x, y: standY(G.map, x, y), z: w.z }; };
 
 function initInput() {
   const el = R.canvas, pts = new Map(); let drag = 0, pinch = 0;
@@ -5650,6 +5801,7 @@ function initInput() {
     if (P.mode === 'muctieu') { if (e.key === 'Escape' || e.key === 'Backspace') hudAction('quaylai'); else if (P.fc && (e.key === 'Enter' || e.key === ' ')) hudAction('xacnhan'); else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') hudAction(e.key === 'ArrowLeft' ? 'vukhitruoc' : 'vukhisau'); else if (e.key === 'Tab') { e.preventDefault(); const l = P.targets, i = (l.indexOf(P.foe) + 1) % l.length; Play.aim(P, l[i]); selectTile(l[i]); } return; }
     if (e.key === 'Escape') { Play.cancel(P); G.sel = null; }
     else if (e.key === 'e' || e.key === 'E') hudAction('hetluot');
+    else if (e.key === 't' || e.key === 'T') hudAction('tua');
     else if (e.key === 'Enter' || e.key === ' ') tapTile(s);
     else if (e.key === 'f' || e.key === 'F' || e.key === '0') camReset();
     else if (e.key === 'ArrowUp' || e.key === 'w') m = [0, -1]; else if (e.key === 'ArrowDown' || e.key === 's') m = [0, 1];
@@ -5662,7 +5814,8 @@ function step(dt) {
   G.t += dt; SH.uTime.value = G.t;
   beginParts();
   updateFX(dt, G.t);
-  if (!G.title && !G.intro) Play.update(G.play, dt);
+  if (!G.title && !G.intro) Play.advance(G.play, dt);   // advance = update, trừ khi đang bỏ qua lượt địch
+  Anim.sync(G.play, placeOf);   // tua Timeline GSAP tới đồng hồ của Play (54-anim)
   if (G.play.over && !G.ended) { G.ended = true; onBattleEnd(G.play.over); }
   if (G.toast && (G.toast.t += dt) >= G.toast.dur) G.toast = null;
   drawUnits(G.map, G.t, G.play);
@@ -5729,7 +5882,7 @@ function boot() {
   if (HASH.biome) S.biome = HASH.biome;
   const B = G.B = buildGridBoard(S, +(HASH.seed || 1));
   R.scene.add(B.group); activateGridBoard(B);
-  G.play = Play.create(S, DATA, seed);
+  G.play = Play.create(S, DATA, seed); Play.setSpeed(G.play, loadSpeed());
   if (S.chapterName) G.play.banner.text = S.chapterName + ' · Lượt ' + S.turn;
   if (S.goal) { G.play.banner.sub = 'Mục tiêu: ' + Core.goalText(S.goal, DATA).win; G.play.banner.dur = 2.6; }
   if (S.mode === 'deadzone') { G.play.banner.sub = 'Vùng Chết · quân ngã sẽ chết vĩnh viễn'; G.play.banner.dur = 2.6; }
@@ -5742,7 +5895,7 @@ function boot() {
   R.canvas.addEventListener('webglcontextrestored', () => location.reload());
   document.addEventListener('visibilitychange', () => { if (!document.hidden) _last = performance.now(); });
   // Móc cho công cụ (tools/cdp.js, tools/record.js): __vd, giữ tên cũ __cw để công cụ Cinderwatch vẫn chạy.
-  window.__vd = window.__cw = { G, R, CAM, LT, FX, Core, Play, Save, OVL, DATA, step, pickTile, screenOfTile, selectTile, tapTile, hudAction, HUD, tick(dt, render) { R.frameDt = dt; step(dt); R.fade = 1; applyCamera(); if (render) renderFrame(); HUD.draw(); } };
+  window.__vd = window.__cw = { G, R, CAM, LT, FX, Core, Play, Save, OVL, DATA, Anim, step, pickTile, screenOfTile, selectTile, tapTile, hudAction, HUD, tick(dt, render) { R.frameDt = dt; step(dt); R.fade = 1; applyCamera(); if (render) renderFrame(); HUD.draw(); } };
   if (HASH.sel) { const [x, y] = HASH.sel.split(',').map(Number); selectTile({ x, y }); }
   if (HASH.ff) { const n = Math.round(+HASH.ff * 30); for (let i = 0; i < n; i++) step(1 / 30); R.fade = 1; }
   if (HASH.cam) window.__vd.lock = HASH.cam.split(',').map(Number);

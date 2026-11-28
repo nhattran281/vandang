@@ -18,6 +18,9 @@
 // P.levelUp (tuần 5): { list: growth.levels + growth.ranks, t } — bảng "Lên cấp" sau trận; chạm (Play.tap / dismissLevel) hoặc hết LEVEL_TIME thì đóng.
 //   Trong lúc hiện bảng, mọi thứ khác tạm dừng (busy). P.lastGrowth = growth log gần nhất (39-level).
 // S.phase: 'ta' | 'dich' | 'npc'. Hết lượt NPC thì sang lượt ta mới (S.turn + 1).
+// P.ff (tuần 6): tốc độ phát lượt Địch/NPC — 1 · 2 · 4 · 0 = bỏ qua hoạt ảnh. Chỉ nhân dt cho băng chữ, đi, trận, nghỉ giữa quân;
+//   không đổi thứ tự tính toán hay số lần gọi RNG, nên kết quả trận như nhau ở mọi tốc độ. Bảng Lên cấp không bị tua.
+// Hoạt ảnh hiển thị (54-anim.js, GSAP Timeline) tua theo đồng hồ của Play (P.anim.t, P.battle.t); file này không dùng GSAP.
 const Play = (() => {
   const STEP_TIME = .16;   // giây mỗi ô khi đi (nhịp hiển thị; logic chốt ngay khi ra lệnh)
   const BANNER_TIME = 1.1; // băng chữ đầu mỗi phe
@@ -27,10 +30,13 @@ const Play = (() => {
   // Nhịp phát lại trận (giây). Mỗi đòn: vung → trúng ở IMPACT → HP tụt trong DRAIN → nghỉ tới hết STRIKE.
   const STRIKE_TIME = .9, IMPACT = .28, DRAIN = .35, POPUP = .85, KO_TIME = .8, END_TIME = .45;
   const FOES = { ta: ['dich'], dich: ['ta', 'npc'], npc: ['dich'] };   // ai đánh được ai
+  const TIMING = { STEP_TIME, STRIKE_TIME, IMPACT, DRAIN, POPUP, KO_TIME, END_TIME };   // dùng chung với Timeline (54-anim)
+  const SPEEDS = [1, 2, 4, 0];   // nút tua lượt địch: x1 → x2 → x4 → bỏ qua → x1
+  const SKIP_STEPS = 600;        // bỏ qua: tối đa số bước update trong một khung hình
 
   function create(S, data, seed) {
     const P = { S, data, mode: 'cho', unit: null, R: null, target: null, path: null, anim: null, undo: null, banner: null, queue: [], gap: 0, ver: 0,
-      rng: Core.rng(seed != null ? seed : 1), targets: [], foe: null, fc: null, wpns: [], wpn: null, battle: null, lastFight: null, over: null, act: null, lastPlan: null, lastAct: null, levelUp: null, lastGrowth: null };
+      rng: Core.rng(seed != null ? seed : 1), targets: [], foe: null, fc: null, wpns: [], wpn: null, battle: null, lastFight: null, over: null, act: null, lastPlan: null, lastAct: null, levelUp: null, lastGrowth: null, ff: 1 };
     P.banner = { text: `Lượt ${S.turn} · ${NAME.ta}`, side: 'ta', t: 0, dur: BANNER_TIME };
     return P;
   }
@@ -242,9 +248,22 @@ const Play = (() => {
   // Lưu tạm được không (GDD 5.4): lượt ta, không có gì đang chạy, chưa chọn quân hoặc mới chọn (chưa đi).
   const canSuspend = P => !P.over && P.S.phase === 'ta' && !busy(P) && (P.mode === 'cho' || P.mode === 'chon');
 
-  function update(P, dt) {
+  // ----- Tua nhanh lượt địch (tuần 6) -----
+  const ffActive = P => P.S.phase !== 'ta' && P.ff !== 1;
+  function setSpeed(P, v) { if (!SPEEDS.includes(v)) return false; P.ff = v; return true; }
+  function nextSpeed(P) { return setSpeed(P, SPEEDS[(SPEEDS.indexOf(P.ff) + 1) % SPEEDS.length]); }
+  // Hệ số nhân dt: lượt ta luôn 1; lượt Địch/NPC theo P.ff (0 = bỏ qua → Infinity: mỗi bước update xong ngay một việc).
+  const scaleOf = P => P.S.phase === 'ta' ? 1 : P.ff === 0 ? Infinity : P.ff;
+  // Một khung hình của vòng lặp game. Bỏ qua: chạy liền nhiều bước update tới khi về lượt ta / có bảng Lên cấp / hết trận.
+  function advance(P, dt) {
+    if (P.ff !== 0 || P.S.phase === 'ta' || P.levelUp || P.over) return update(P, dt);   // bảng Lên cấp vẫn đếm giờ thật
+    for (let i = 0; i < SKIP_STEPS && !P.over && !P.levelUp && P.S.phase !== 'ta'; i++) update(P, dt);
+  }
+
+  function update(P, dt0) {
     if (P.over) return;
-    if (P.levelUp) { P.levelUp.t += dt; if (P.levelUp.t >= P.levelUp.dur) dismissLevel(P); return; }
+    if (P.levelUp) { P.levelUp.t += dt0; if (P.levelUp.t >= P.levelUp.dur) dismissLevel(P); return; }
+    const dt = dt0 * scaleOf(P);
     if (P.battle) { P.battle.t += dt; if (P.battle.t >= P.battle.dur) endBattle(P); return; }
     if (!P.anim && checkWin(P)) return;
     if (P.banner) { P.banner.t += dt; if (P.banner.t >= P.banner.dur) { P.banner = null; P.ver++; } return; }
@@ -278,5 +297,5 @@ const Play = (() => {
 
   const left = P => P.S.units.filter(u => ready(P, u)).length;
 
-  return { create, ready, busy, canSuspend, won, checkWin, dismissLevel, LEVEL_TIME, select, cancel, tap, wait, undo, endTurn, update, animPos, left, targets, targetsOf, usableWeapons, attack, aim, cycleWeapon, back, confirm, battleView, STEP_TIME, STRIKE_TIME, IMPACT };
+  return { create, ready, busy, canSuspend, won, checkWin, dismissLevel, LEVEL_TIME, select, cancel, tap, wait, undo, endTurn, update, advance, setSpeed, nextSpeed, ffActive, SPEEDS, animPos, left, targets, targetsOf, usableWeapons, attack, aim, cycleWeapon, back, confirm, battleView, STEP_TIME, STRIKE_TIME, IMPACT, TIMING };
 })();

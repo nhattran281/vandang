@@ -1,7 +1,8 @@
 // ===== Vân Đăng · HUD tạm =====
 // Chữ vẽ lên canvas #hud bằng font hệ thống (font pixel 70-pixelfont chưa có dấu tiếng Việt).
 // Tên map, gợi ý, thông tin ô, nút Hết lượt / menu hành động (tuần 2).
-// Tuần 3: nút Đánh, bảng dự báo dọc 2 cột (đọc P.fc = Core.forecast), bảng phát lại trận + số sát thương bay lên (đọc Play.battleView).
+// Tuần 3: nút Đánh, bảng dự báo dọc 2 cột (đọc P.fc = Core.forecast), bảng phát lại trận + số sát thương bay lên (tuần 6: đọc Anim.battle).
+// Tuần 6: nút tua lượt địch (x1 · x2 · x4 · Bỏ qua) ở góc trên phải, dưới Hết lượt / Lưu tạm.
 // Số sát thương dùng font pixel 70-pixelfont (chỉ chữ số); chữ có dấu dùng font hệ thống.
 const HUD = {
   ctx: null, btns: [],
@@ -40,8 +41,10 @@ const HUD = {
       this.button(c, 'Hết lượt', 'hetluot', W - sr - pad - 104 * d, st + pad, 104 * d, 44 * d, false);
       if (G.campaign && Play.canSuspend(P)) this.button(c, 'Lưu tạm', 'luutam', W - sr - pad - 104 * d, st + pad + 52 * d, 104 * d, 40 * d, false);
     }
+    // Nút tua lượt địch (tuần 6): luôn ở cùng chỗ khi đang trong trận, chỉnh trước được từ lượt ta.
+    if (!P.over) this.button(c, this.speedLabel(P), 'tua', W - sr - pad - 104 * d, st + pad + 100 * d, 104 * d, 40 * d, Play.ffActive(P));
     let top = H - sb - pad; // mép trên của khối dưới cùng
-    const sel = G.sel, bv = Play.battleView(P);
+    const sel = G.sel, bv = Anim.battle(P);   // trận đang phát: giá trị do GSAP Timeline ghi (54-anim)
     if (sel && (P.mode === 'cho' || P.mode === 'chon' || P.mode === 'menu' || P.mode === 'may')) {
       const lines = this.describe(S, sel.x, sel.y);
       const lh = fs * 1.35, bw = Math.min(W - sl - sr - pad * 2, 420 * d), bh = lines.length * lh + pad * 1.2, bx = sl + pad, by = H - sb - pad - bh;
@@ -338,6 +341,7 @@ const HUD = {
     if (b.sub) { c.font = `400 ${15 * d}px system-ui, sans-serif`; c.fillStyle = 'rgba(230,220,200,.85)'; c.fillText(b.sub, W / 2, y + h / 2 + 16 * d); }
     c.textAlign = 'left'; c.textBaseline = 'top'; c.globalAlpha = 1;
   },
+  speedLabel(P) { return P.ff === 0 ? 'Địch: Bỏ qua' : 'Địch: x' + P.ff; },
   // Chạm vào nút nào (toạ độ CSS px) → tên hành động hoặc null
   hit(cssX, cssY) {
     const k = R.dw / R.cssW, x = cssX * k, y = cssY * k;
@@ -351,7 +355,7 @@ const HUD = {
     if (P.banner) return '';
     if (P.battle) return 'Đang giao chiến…';
     if (P.mode === 'muctieu') return P.fc ? (P.wpns.length > 1 ? '◀ ▶ đổi vũ khí · chạm lại mục tiêu hoặc Đánh để xác nhận' : 'Chạm lại mục tiêu hoặc nút Đánh để xác nhận') : 'Chạm quân địch trong ô đỏ để xem dự báo';
-    if (P.mode === 'may') return (P.S.phase === 'npc' ? 'NPC' : 'Phe địch') + ' đang đi…';
+    if (P.mode === 'may') return (P.S.phase === 'npc' ? 'NPC' : 'Phe địch') + ' đang đi…' + (P.ff !== 1 ? ' (' + (P.ff ? 'x' + P.ff : 'bỏ qua') + ')' : '');
     if (P.mode === 'di') return 'Đang đi…';
     if (P.mode === 'menu') return Play.targets(P).length ? 'Chọn: Đánh · Chờ · Hoàn tác' : 'Chọn: Chờ (kết thúc) hoặc Hoàn tác (về ô cũ)';
     if (P.mode === 'chon') return P.target ? 'Chạm lần nữa để đi · chạm ngoài vùng để hủy' : G.last === 'quaduoc' ? 'Ô tím: chỉ đi qua, không dừng được' : 'Chạm ô xanh để xem đường · ngoài vùng để hủy';

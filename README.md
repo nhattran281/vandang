@@ -6,7 +6,7 @@ Nền kỹ thuật fork từ [Cinderwatch](https://github.com/kevintngo/cinderwa
 
 ![Map thử trên điện thoại](media/tuan1-dien-thoai.jpg)
 
-## Trạng thái: Tuần 5 (lên cấp, lưu game, đủ quân Ch.1–3, khung chương + Ch.1–3)
+## Trạng thái: Tuần 6 (GSAP Timeline cho di chuyển + trận đánh, tua lượt địch); tuần 5 xong
 
 - Đã gỡ logic tower defense (`60-towers`, `61-monsters`, `62-game`).
 - Dữ liệu dạng JSON trong `data/`, được nhúng vào bản build.
@@ -23,6 +23,10 @@ Nền kỹ thuật fork từ [Cinderwatch](https://github.com/kevintngo/cinderwa
 
 ![Ch.2 Bến Đò Sương](media/tuan5-ch2-ben-do.png) ![Ch.3 Rừng Trành](media/tuan5-ch3-rung-tranh.png)
 
+- Tuần 6 mục 1: **GSAP 3.15.1 (lõi)** cho hoạt ảnh hiển thị (`vendor/gsap.min.js`, `build.py` chèn như three.js; giấy phép ở `vendor/LICENSE-gsap.txt`). `src/54-anim.js` dựng **Timeline** cho di chuyển đơn vị và chuỗi trận đánh (lao tới + vung → trúng: giật lùi, chớp, HP tụt / trượt: né sang bên → số sát thương bay lên → lùi về; phản đòn, đánh đôi là các đòn tiếp theo trong nhật ký `Core.fight`; rút lui; +EXP). Timeline luôn paused và được tua tới đúng đồng hồ của Play (`P.anim.t`, `P.battle.t`, tăng bằng dt của vòng lặp game) → phát lại theo seed và `record.js` khớp từng khung. Logic (`34`–`39`) không dùng GSAP. **Tua lượt địch**: nút "Địch: x1" góc trên phải (hoặc phím T) xoay x1 → x2 → x4 → Bỏ qua; chỉ nhân dt cho lượt Địch/NPC, kết quả trận giống hệt ở mọi tốc độ; bảng Lên cấp không bị tua; tốc độ được nhớ (localStorage, trừ `#manual`).
+
+![Trận đánh bằng GSAP Timeline](media/tuan6-tran-gsap.png)
+
 ## Chạy, build, test
 
 ```bash
@@ -34,6 +38,7 @@ node tools/test_ai.js       # test AI chấm điểm + AI vs AI
 node tools/test_level.js    # test bảng class, EXP, lên cấp, hạng vũ khí
 node tools/test_save.js     # test lưu game (chiến dịch, lưu chương, lưu tạm + RNG, bản lưu hỏng)
 node tools/test_data.js     # test dữ liệu class/nhân vật/quái Ch.1–3, cơ chế quái (tuần 8), cung/nỏ đứng cao +1 tầm
+node tools/test_anim.js     # test hoạt ảnh GSAP (Timeline đi/trận khớp nhật ký, tất định theo đồng hồ game) + tua lượt địch x1/x2/x4/bỏ qua ra cùng kết quả
 node tools/test_chapter.js  # test chapters.json, điều kiện thắng/thua, luật chương, luồng chương, Ch.1–3; AI vs AI 100 trận mỗi chương
 ```
 
@@ -65,7 +70,8 @@ CHROME=/usr/bin/google-chrome node tools/cdp.js "" 390,844 "tapat:__vd.screenOfT
 | `src/36-play.js` | **Điều khiển lượt** (thuần dữ liệu): chọn quân → ô đích → đi → Đánh/Chờ/Hoàn tác, chọn mục tiêu → dự báo → xác nhận → phát lại (`battleView`); vòng lượt Ta → Địch → NPC, nước đi tạm cho quân máy |
 | `src/37-skills.js` | **Khung kỹ năng** (thuần dữ liệu): mục tiêu, tài nguyên, `Core.useSkill` (sát thương thật, trạng thái/môi trường ghi nhận) |
 | `src/56-overlay.js` | Tô vùng đi được (xanh = dừng được, tím = chỉ đi qua), vẽ đường đi; tô tầm đánh và mục tiêu (đỏ) |
-| `src/55-units.js` | Vẽ đơn vị bằng rig người của Cinderwatch (tạm) |
+| `src/54-anim.js` | Hoạt ảnh hiển thị bằng GSAP Timeline (đi, chuỗi trận đánh), tua theo đồng hồ của Play; không ghi vào logic |
+| `src/55-units.js` | Vẽ đơn vị bằng rig người của Cinderwatch (tạm); tư thế đi/đánh đọc từ `54-anim` |
 | `src/72-hud.js` | HUD (font hệ thống, có dấu tiếng Việt; số sát thương dùng `70-pixelfont`): menu, bảng dự báo, bảng phát lại trận |
 | `src/90-main.js` | Camera (giữ từ Cinderwatch), nhập liệu, vòng lặp, khởi động |
 | `legacy/` | File Cinderwatch không build nữa, giữ để tham khảo (đường đi, địa hình cong, đồ vật, UI cũ) |

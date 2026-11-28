@@ -1,5 +1,5 @@
 {
-  "_doc": "Mẫu đơn vị. stats theo GDD 2.2 (hp str mag skl spd lck def res con mov). Số liệu TẠM để dựng khung, chốt ở tuần 3 và tuần 5. weapons: id trong data/weapons.json, cái đầu tiên cầm được là vũ khí đang trang bị. ranks: hạng vũ khí theo loại (E/C/A/S). skills: id trong data/skills.json; resources: mức tối đa tài nguyên mỗi trận (GDD 2.6). look: gợi ý cho phần vẽ (phần logic bỏ qua).",
+  "_doc": "Mẫu đơn vị. stats theo GDD 2.2 (hp str mag skl spd lck def res con mov). Số liệu TẠM để dựng khung, chốt ở tuần 3 và tuần 5. weapons: id trong data/weapons.json, cái đầu tiên cầm được là vũ khí đang trang bị. ranks: hạng vũ khí theo loại (E/C/A/S). skills: id trong data/skills.json; resources: mức tối đa tài nguyên mỗi trận (GDD 2.6). look: gợi ý cho phần vẽ (phần logic bỏ qua). ai: hành vi AI mặc định (data/ai.json → behaviors; thiếu = lao_vao), roster của map ghi đè được. moRuong: mở được rương.",
   "templates": {
     "dang": {
       "name": "Đăng", "title": "Người Giữ Đèn", "tags": ["Nguoi"], "moveType": "bo", "lv": 1,
@@ -31,6 +31,21 @@
       "weapons": ["giao_sat"], "ranks": { "giao": "E" },
       "stats": { "hp": 19, "str": 6, "mag": 0, "skl": 3, "spd": 3, "lck": 1, "def": 6, "res": 0, "con": 9, "mov": 4 },
       "look": { "rig": "foot", "tint": [0.95, 0.45, 0.38], "weapon": "club", "shield": "shieldH", "helm": true }
+    },
+    "vien_tac": {
+      "name": "Đạo tặc", "title": "Viện", "tags": ["Nguoi"], "moveType": "nhe", "lv": 1, "moRuong": true,
+      "ai": { "type": "dao_tac" },
+      "weapons": ["kiem_sat"], "ranks": { "kiem": "E" },
+      "stats": { "hp": 15, "str": 3, "mag": 0, "skl": 6, "spd": 9, "lck": 4, "def": 2, "res": 0, "con": 5, "mov": 6 },
+      "look": { "rig": "foot", "tint": [0.6, 0.35, 0.3], "weapon": "sword", "hood": true }
+    },
+    "vien_y": {
+      "name": "Y sư Viện", "title": "Chữa trị", "tags": ["Nguoi"], "moveType": "bo", "lv": 1,
+      "ai": { "type": "chua_tri" },
+      "weapons": [], "ranks": {},
+      "skills": ["chua"], "resources": { "linh_luc": 4 },
+      "stats": { "hp": 14, "str": 0, "mag": 4, "skl": 3, "spd": 4, "lck": 3, "def": 1, "res": 5, "con": 5, "mov": 5 },
+      "look": { "rig": "foot", "tint": [0.95, 0.8, 0.7], "robe": true, "hood": true }
     },
     "dan_lang": {
       "name": "Dân làng", "title": "NPC", "tags": ["Nguoi"], "moveType": "bo", "lv": 1,

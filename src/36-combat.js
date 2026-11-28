@@ -12,6 +12,7 @@ Object.assign(Core, (() => {
   const CRIT_MULT = 3;            // chí mạng ×3
   const LORDS = ['dang', 'linh']; // ngã → thua trận (GDD 2.9)
 
+  const isLord = u => !!u.lord || LORDS.includes(u.tpl);   // Đăng/Linh: ngã là thua, AI phe ta phải che chắn
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const half = v => Math.floor(v / 2);           // chia đôi làm tròn xuống
   const rn = rng => Math.floor(rng() * 100);      // một số 0–99
@@ -82,7 +83,7 @@ Object.assign(Core, (() => {
   function knockOut(u, mode) {
     const perma = mode === 'classic' || mode === 'deadzone';
     u.hp = 0; if (perma) u.dead = true; else u.retreated = true;
-    return { uid: u.uid, result: perma ? 'dead' : 'retreated', gameOver: !!u.lord || LORDS.includes(u.tpl) };
+    return { uid: u.uid, result: perma ? 'dead' : 'retreated', gameOver: isLord(u) };
   }
 
   // Chạy một trận: A → D phản → A (đánh đôi) → D (đánh đôi); dừng khi có bên về 0 HP.
@@ -115,5 +116,5 @@ Object.assign(Core, (() => {
     return { forecast: fc, strikes: log, outcome: fallen ? knockOut(fallen, ctx.mode || 'casual') : null };
   }
 
-  return { effectiveOn, roll2RN, trueHit, attackSpeed, inRange, forecast, fight, knockOut };
+  return { isLord, effectiveOn, roll2RN, trueHit, attackSpeed, inRange, forecast, fight, knockOut };
 })());

@@ -15,7 +15,8 @@
     "push":   { "live": false, "_doc": "Đẩy mục tiêu ra xa người dùng dist ô." },
     "light":  { "live": false, "_doc": "Nguồn sáng tại ô đích: xua sương bán kính radius trong turns lượt." },
     "ignite": { "live": false, "_doc": "Đốt ô đích trong turns lượt (chặn đường, gây Bỏng)." },
-    "shield": { "live": false, "_doc": "Khiên hấp thụ amount sát thương trong turns lượt." }
+    "shield": { "live": false, "_doc": "Khiên hấp thụ amount sát thương trong turns lượt." },
+    "heal":   { "live": true,  "_doc": "Hồi máu (chốt tuần 4, bản tối thiểu): hồi Phép + mt HP, không trượt, kẹp HP tối đa. Cần target ally." }
   },
   "skills": {
     "soi": {
@@ -48,6 +49,12 @@
       "target": "ally", "range": [0, 1],
       "desc": "Bọc lửa đèn quanh mình hoặc đồng đội kề bên thành khiên.",
       "effects": [ { "type": "shield", "amount": 5, "turns": 1 } ]
+    },
+    "chua": {
+      "name": "Chữa", "owner": "vien_y", "resource": "linh_luc", "cost": 1,
+      "target": "ally", "range": [1, 1],
+      "desc": "Niệm chú hồi máu cho một đồng minh kề bên.",
+      "effects": [ { "type": "heal", "mt": 5 } ]
     }
   }
 }

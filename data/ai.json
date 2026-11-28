@@ -1,12 +1,36 @@
 {
-  "_doc": "AI chấm điểm (GDD 4). Số liệu TẠM, chỉnh ở tuần 11. Điểm một nước (ô đứng, mục tiêu, hành động) = damage × sát thương kỳ vọng gây ra + kill × xác suất hạ gục − counter × sát thương kỳ vọng bị phản đòn − death × xác suất chết khi phản đòn − tile × rủi ro ô đứng − skillCost × tài nguyên kỹ năng. Rủi ro ô đứng = tổng sát thương kỳ vọng mà các địch với tới ô đó trong lượt sau gây ra (mục tiêu nhân thêm xác suất còn sống), tối đa bằng HP còn lại sau phản đòn. Kỳ vọng tính đủ True Hit 2RN + chí mạng theo thứ tự đòn A → D → A → D. Phương án không đánh (tiến về ô gần nhất đánh được, hoặc đứng yên) có điểm = − tile × rủi ro ô đứng; nước đánh/kỹ năng tốt nhất chỉ được chọn khi hơn phương án đó quá minScore.",
+  "_doc": "AI chấm điểm (GDD 4). Số liệu TẠM, chỉnh ở tuần 11. Điểm một nước (ô đứng, mục tiêu, hành động) = damage × sát thương kỳ vọng gây ra + kill × xác suất hạ gục − counter × sát thương kỳ vọng bị phản đòn − death × xác suất chết khi phản đòn − tile × rủi ro ô đứng − skillCost × tài nguyên kỹ năng. Rủi ro ô đứng = tổng sát thương kỳ vọng mà các địch với tới ô đó trong lượt sau gây ra (mục tiêu nhân thêm xác suất còn sống), tối đa bằng HP còn lại sau phản đòn. Kỳ vọng tính đủ True Hit 2RN + chí mạng theo thứ tự đòn A → D → A → D. Phương án không đánh (tiến về ô gần nhất đánh được, hoặc đứng yên) có điểm = − tile × rủi ro ô đứng; nước đánh/kỹ năng tốt nhất chỉ được chọn khi hơn phương án đó quá minScore. Tuần 4 mục 2: Đăng/Linh (phe ta) nhân rủi ro ô đứng ×lordTile và chết khi phản đòn ×lordDeath, không có nước đánh thì lùi về ô an toàn nhất; đồng đội được thưởng guard × xác suất hạ × sát thương kỳ vọng mục tiêu sẽ gây cho Đăng/Linh (×lordTile) hoặc người được Hộ vệ (×protect). Hồi máu: heal × HP hồi × (1 + low × tỷ lệ máu đã mất) − tile × rủi ro − skillCost × tài nguyên.",
   "weights": {
     "damage": 1,
     "kill": 15,
     "counter": 1,
     "death": 25,
     "tile": 0.5,
-    "skillCost": 2
+    "skillCost": 2,
+    "heal": 1,
+    "low": 2,
+    "guard": 1,
+    "lordTile": 3,
+    "lordDeath": 4
   },
-  "minScore": 0
+  "minScore": 0,
+  "_behaviors": "Hành vi gắn theo đơn vị (GDD 4). Khai báo ở mẫu (units.json → ai: { type, ...tham số }) hoặc roster của map ({ tpl, ai }), ghi đè tham số mặc định dưới đây. Hành vi chỉ lọc ô đứng / cộng điểm / đổi phương án không đánh của planTurn. lao_vao (mặc định): tiến về địch. giu_vi_tri: chỉ đứng trong bán kính radius quanh ô xuất phát, ra ngoài thì quay về. cho_tam: đứng yên tới khi đánh được ai đó lượt này hoặc bị thương, từ đó như lao_vao (u.awake). dung_yen: không rời ô (boss). ho_ve: chỉ đứng trong bán kính radius quanh đơn vị follow (id mẫu hoặc uid), thưởng ×protect khi hạ địch đe dọa người đó, không đánh được thì đứng ô an toàn nhất cạnh người đó. dao_tac: tới ô kề rương chưa mở → mở (cần moRuong) → chạy tới ô thoát (exits của map, mặc định mép map) rồi rời trận; hết rương thì dùng hành vi then. chua_tri: hồi đồng minh máu thấp nhất; không ai bị thương thì theo đồng minh gần nhất trong bán kính radius, chọn ô an toàn.",
+  "behaviors": {
+    "lao_vao": {},
+    "giu_vi_tri": {
+      "radius": 2
+    },
+    "cho_tam": {},
+    "dung_yen": {},
+    "ho_ve": {
+      "radius": 2,
+      "protect": 2
+    },
+    "dao_tac": {
+      "then": "lao_vao"
+    },
+    "chua_tri": {
+      "radius": 2
+    }
+  }
 }

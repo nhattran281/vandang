@@ -46,11 +46,17 @@ const Core = (() => {
       for (const c of 'AENC') {
         const n = count[c] || 0, list = R[c] || [];
         if (list.length !== n) fail(errs, `roster.${c} có ${list.length} mục nhưng map có ${n} ký hiệu '${c}'`);
-        if (c !== 'C') for (const id of list) if (!data.units.templates[id]) fail(errs, `roster.${c}: không có mẫu đơn vị '${id}'`);
+        if (c !== 'C') for (const e of list) { const id = rosterTpl(e); if (!data.units.templates[id]) fail(errs, `roster.${c}: không có mẫu đơn vị '${id}'`); }
       }
+    }
+    if (m.exits !== undefined) {
+      if (!Array.isArray(m.exits)) fail(errs, 'exits phải là mảng [[x,y],...]');
+      else m.exits.forEach((e, i) => { if (!Array.isArray(e) || !(e[0] >= 0 && e[0] < w && e[1] >= 0 && e[1] < h)) fail(errs, `exits[${i}] nằm ngoài map`); });
     }
     return errs;
   }
+  // Mục roster: chuỗi id mẫu, hoặc { tpl, ai } để gắn hành vi AI riêng cho quân này (GDD 4; ghi đè ai của mẫu).
+  const rosterTpl = e => typeof e === 'string' ? e : e && e.tpl;
 
   // ---------- Vũ khí (GDD 2.4, 2.5) ----------
   const RANKS = 'ECAS';                     // E → C → A → S
@@ -110,6 +116,9 @@ const Core = (() => {
     // Kỹ năng + tài nguyên mỗi trận (GDD 2.6): resMax lấy từ mẫu, res hồi đầy khi tạo đơn vị / đầu trận.
     u.skills = (tpl.skills || []).slice();
     u.resMax = Object.assign({}, tpl.resources); u.res = Object.assign({}, u.resMax);
+    // AI (38-ai.js): hành vi gắn theo đơn vị; home = ô xuất phát (cho Giữ vị trí). moRuong: mở được rương (đạo tặc, Mèo).
+    u.ai = Object.assign({}, tpl.ai); u.home = [x, y];
+    if (tpl.moRuong) u.moRuong = true;
     return u;
   }
 
@@ -124,13 +133,14 @@ const Core = (() => {
       tiles[y * w + x] = { x, y, c, id: T[c].id, h: m.height ? +m.height[y][x] : 0 };
     }
     const S = { id: m.id, name: m.name || m.id, biome: m.biome || 'ashen', w, h, tiles, units: [], chests: [], turn: 1, phase: 'ta' };
+    if (m.exits) S.exits = m.exits.map(e => [e[0], e[1]]);
     if (m.units) {
       const next = { A: 0, E: 0, N: 0, C: 0 }; let uid = 1;
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
         const c = m.units[y][x]; if (c === '.') continue;
-        const id = m.roster[c][next[c]++];
+        const e = m.roster[c][next[c]++], id = rosterTpl(e);
         if (c === 'C') S.chests.push({ x, y, item: id, open: false });
-        else S.units.push(makeUnit(id, data, SIDES[c], x, y, uid++));
+        else { const u = makeUnit(id, data, SIDES[c], x, y, uid++); if (e && e.ai) Object.assign(u.ai, e.ai); S.units.push(u); }
       }
     }
     return S;
@@ -143,6 +153,28 @@ const Core = (() => {
   function moveCost(S, x, y, moveType, data) { const t = terrainOf(S, x, y, data); if (!t) return null; const c = t.cost[moveType]; return c === undefined ? null : c; }
   const unitAt = (S, x, y) => S.units.find(u => u.x === x && u.y === y && u.hp > 0) || null;
   const chestAt = (S, x, y) => S.chests.find(c => c.x === x && c.y === y) || null;
+
+  // ----- Rương & ô thoát (bản tối thiểu, chốt tuần 4) -----
+  // Mở rương: hành động thay Đánh, đứng ô kề (Manhattan 1), chỉ đơn vị có moRuong. Không chìa khóa.
+  // Rương đã mở vẫn chặn đường. Món đồ chưa vào túi (tuần 5/8): ghi vào chest.takenBy và u.loot.
+  function openChest(S, u, x, y) {
+    const c = chestAt(S, x, y);
+    if (!c) return { ok: false, error: `không có rương ở (${x},${y})` };
+    if (c.open) return { ok: false, error: 'rương đã mở' };
+    if (!u.moRuong) return { ok: false, error: `${u.name} không mở được rương` };
+    if (u.hp <= 0 || Math.abs(u.x - x) + Math.abs(u.y - y) !== 1) return { ok: false, error: 'phải đứng kề rương' };
+    c.open = true; c.takenBy = { uid: u.uid, side: u.side };
+    (u.loot = u.loot || []).push(c.item);
+    return { ok: true, item: c.item, chest: c };
+  }
+  // Ô thoát: map khai báo exits [[x,y],...]; không khai báo thì mọi ô mép map đều là ô thoát.
+  const isExit = (S, x, y) => S.exits ? S.exits.some(e => e[0] === x && e[1] === y) : (inside(S, x, y) && (x === 0 || y === 0 || x === S.w - 1 || y === S.h - 1));
+  // Rời map qua ô thoát (đạo tặc mang đồ chạy): u.escaped = true, hp = 0 để mọi chỗ coi như đã rời trận (không phải rút lui / chết).
+  function escape(S, u) {
+    if (u.hp <= 0 || !isExit(S, u.x, u.y)) return { ok: false, error: 'không đứng ở ô thoát' };
+    u.escaped = true; u.hp = 0;
+    return { ok: true, loot: (u.loot || []).slice() };
+  }
 
   // ----- Tìm đường & vùng đi được (GDD 3.1–3.2) -----
   // Luật độ cao lấy từ data.terrain.height; thiếu thì dùng mặc định.
@@ -235,5 +267,5 @@ const Core = (() => {
     return { terrain, height, units };
   }
 
-  return { rng, validateMap, loadMap, makeUnit, makeWeapon, canWield, usable, equipFirst, validateWeapons, RANKS, inside, tile, terrainOf, moveCost, unitAt, chestAt, toAscii, STAT_KEYS, heightRule, canStep, stepCost, reachable, pathTo, canStopAt };
+  return { rng, validateMap, loadMap, makeUnit, makeWeapon, canWield, usable, equipFirst, validateWeapons, RANKS, inside, tile, terrainOf, moveCost, unitAt, chestAt, openChest, isExit, escape, toAscii, STAT_KEYS, heightRule, canStep, stepCost, reachable, pathTo, canStopAt };
 })();

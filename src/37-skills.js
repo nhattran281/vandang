@@ -2,7 +2,7 @@
 // Logic thuần (GDD 2.6): không THREE, không DOM. Gắn thêm hàm vào Core (cần 34-core.js + 36-combat.js).
 // Dữ liệu: data/skills.json. Đơn vị (makeUnit) có u.skills [id], u.res {tàiNguyên: còn}, u.resMax {tàiNguyên: tối đa}.
 // Kỹ năng thay cho hành động Đánh: phần chơi gọi Core.useSkill rồi đặt u.done = true như khi đánh.
-// Hiệu ứng: 'damage' chạy thật (dùng Core.fight: công thức + khắc chế 36-combat, 1 đòn, không phản đòn).
+// Hiệu ứng: 'damage' và 'heal' (tuần 4) chạy thật (dùng Core.fight: công thức + khắc chế 36-combat, 1 đòn, không phản đòn).
 // Các loại còn lại (status, push, light, ignite, shield) chỉ ghi nhận vào kết quả (applied: false) — làm thật ở tuần 8.
 Object.assign(Core, (() => {
   const FOES = { ta: ['dich'], dich: ['ta', 'npc'], npc: ['dich'] };   // giống 36-play.js
@@ -64,10 +64,18 @@ Object.assign(Core, (() => {
     return Object.assign({ mode: S.mode || 'casual' }, ctx, { distance: dist(u.x, u.y, tg.x, tg.y), atkTerrain: Core.terrainOf(S, u.x, u.y, data), defTerrain: Core.terrainOf(S, tg.x, tg.y, data), noCounter: true, noDouble: true });
   }
 
+  // Hồi máu (chốt tuần 4, bản tối thiểu): lượng hồi = Phép + mt, không trượt, kẹp HP tối đa. Trả về số HP hồi thực.
+  function healAmount(u, id, tg, data) {
+    const e = getSkill(id, data).effects.find(f => f.type === 'heal');
+    return e && tg && tg.hp > 0 ? Math.max(0, Math.min(tg.stats.hp - tg.hp, ((u.stats.mag | 0) + (e.mt | 0)))) : 0;
+  }
+
   // Dự báo kỹ năng (không đổi trạng thái, cho bảng dự báo/AI). damage: forecast của 36-combat; null nếu kỹ năng không gây sát thương.
+  // heal: số HP hồi thực nếu kỹ năng có hồi máu, ngược lại null.
   function skillForecast(S, u, id, x, y, data, ctx) {
     const k = getSkill(id, data), e = k.effects.find(f => f.type === 'damage'), tg = Core.unitAt(S, x, y);
-    return { skill: id, cost: k.cost, resource: k.resource, damage: e && tg ? withWeapon(u, skillWeapon(k, e, data), () => Core.forecast(u, tg, ctxOf(S, u, tg, data, ctx))) : null };
+    return { skill: id, cost: k.cost, resource: k.resource, damage: e && tg ? withWeapon(u, skillWeapon(k, e, data), () => Core.forecast(u, tg, ctxOf(S, u, tg, data, ctx))) : null,
+      heal: k.effects.some(f => f.type === 'heal') ? healAmount(u, id, tg, data) : null };
   }
 
   // Dùng kỹ năng id của u lên ô (x,y). ctx: { rng | seed, mode } như Core.fight.
@@ -93,6 +101,12 @@ Object.assign(Core, (() => {
         effects.push({ type: 'damage', target: tg.uid, x, y, applied: true, hit, damage: combat.strikes.reduce((a, s) => a + s.damage, 0) });
         continue;
       }
+      if (e.type === 'heal') {
+        if (!tg || !passes(e.if, tg, tileT, hit)) continue;
+        const amount = healAmount(u, id, tg, data); tg.hp += amount;
+        effects.push({ type: 'heal', target: tg.uid, x, y, applied: true, amount, hp: tg.hp });
+        continue;
+      }
       const rec = Object.assign({}, e, { target: tg ? tg.uid : null, x, y, applied: live }); delete rec.if;
       if (!passes(e.if, tg, tileT, hit) || (tg && tg.hp <= 0 && e.type !== 'ignite' && e.type !== 'light')) { rec.skipped = true; rec.applied = false; }
       effects.push(rec);
@@ -116,6 +130,7 @@ Object.assign(Core, (() => {
       if (!Array.isArray(k.effects) || !k.effects.length) errs.push(`${p}: thiếu effects`);
       for (const e of k.effects || []) {
         if (!K.effects[e.type]) errs.push(`${p}: loại hiệu ứng lạ '${e.type}'`);
+        if (e.type === 'heal' && k.target !== 'ally') errs.push(`${p}: heal cần target ally`);
         if (e.type === 'damage' && (k.target !== 'enemy' || !data.weapons || !data.weapons.types[e.dmgType])) errs.push(`${p}: damage cần target enemy và dmgType là loại vũ khí`);
       }
     }
@@ -131,5 +146,5 @@ Object.assign(Core, (() => {
     return errs;
   }
 
-  return { refillResources, canAfford, skillTargets, skillForecast, useSkill, validateSkills };
+  return { refillResources, canAfford, skillTargets, healAmount, skillForecast, useSkill, validateSkills };
 })());

@@ -134,46 +134,160 @@ t('trọng số đọc từ data.ai; thiếu thì dùng mặc định', () => {
   assert.strictEqual(Core.planTurn(S, foe, D).action, null);
 });
 
-// ---------- AI vs AI (map thử, theo seed) ----------
-// Mỗi phe đi lần lượt theo thứ tự S.units; mọi quân dùng planTurn. Dừng khi Đăng/Linh ngã, hết địch, hoặc quá 40 lượt.
-function aiVsAi(seed) {
-  const S = Core.loadMap(DATA.maps.thu, DATA), rng = Core.rng(seed), log = [];
+// ---------- Hành vi gắn theo đơn vị (tuần 4 mục 2) ----------
+const beh = (u, ai) => { u.ai = Object.assign({}, ai); return u; };
+t('hành vi: mặc định lao_vao; mẫu khai báo ai; roster {tpl, ai} ghi đè; validateAi bắt hành vi lạ', () => {
+  eq(Core.validateAi(DATA), []); eq(Core.validateMap(DATA.maps.hanhvi, DATA), []);
+  const S = Core.loadMap(DATA.maps.hanhvi, DATA), by = n => S.units.filter(u => u.tpl === n);
+  assert.strictEqual(Core.planTurn(S, by('dang')[0], DATA).behavior, 'lao_vao');
+  assert.strictEqual(by('vien_tac')[0].ai.type, 'dao_tac'); assert.ok(by('vien_tac')[0].moRuong);
+  eq(by('vien_kiem').map(u => u.ai.type), ['ho_ve', 'cho_tam']); eq(by('vien_kiem')[0].home, [6, 2]);
+  const D = JSON.parse(JSON.stringify(DATA));
+  D.units.templates.vien_kiem.ai = { type: 'ngu' }; D.maps.hanhvi.roster.E[1] = { tpl: 'vien_tac', ai: { type: 'dao_tac', then: 'dao_tac' } };
+  const e = Core.validateAi(D).join('\n'); assert.ok(/ngu/.test(e) && /then/.test(e), e);
+  const u = Core.loadMap(D.maps.thu, D).units.find(o => o.tpl === 'vien_kiem');
+  assert.throws(() => Core.planTurn(Core.loadMap(D.maps.thu, D), u, D), /hành vi AI lạ/);
+});
+t('Giữ vị trí: không rời bán kính quanh ô xuất phát; địch xa thì đứng, địch tới gần thì đánh; bị đẩy ra thì quay về', () => {
+  const S = mk(['............']); const u = beh(put(S, 'vien_kiem', 'dich', 8, 0), { type: 'giu_vi_tri', radius: 1 }); const f = put(S, 'linh', 'ta', 2, 0, { hp: 3 });
+  let p = Core.planTurn(S, u, DATA); assert.strictEqual(p.action, null); eq(p.path, [[8, 0]]);
+  f.x = 6; p = Core.planTurn(S, u, DATA);                                       // đứng (7,0) — trong bán kính 1 — đánh được
+  assert.strictEqual(p.action.type, 'attack'); eq([p.x, p.y], [7, 0]);
+  f.x = 0; u.x = 4; p = Core.planTurn(S, u, DATA);                              // bị kéo ra xa: quay về trong bán kính
+  assert.strictEqual(p.action, null); assert.ok(Math.abs(p.x - 8) <= 1);
+});
+t('Chỉ phản ứng khi vào tầm: ngủ thì đứng yên; đánh được thì đánh (wake); đã thức hoặc bị thương thì như Lao vào', () => {
+  const S = mk(['............']); const u = beh(put(S, 'vien_kiem', 'dich', 11, 0, { mov: 3 }), { type: 'cho_tam' }); const f = put(S, 'linh', 'ta', 0, 0, { hp: 3 });
+  let p = Core.planTurn(S, u, DATA); assert.strictEqual(p.action, null); eq(p.path, [[11, 0]]); assert.ok(!p.wake);
+  u.awake = true; p = Core.planTurn(S, u, DATA); eq([p.x, p.y], [8, 0]);        // thức: tiến như lao_vao
+  u.awake = false; u.hp--; p = Core.planTurn(S, u, DATA); eq([p.x, p.y], [8, 0]); u.hp++;
+  f.x = 7; p = Core.planTurn(S, u, DATA); assert.strictEqual(p.action.type, 'attack'); assert.strictEqual(p.wake, true);
+});
+t('Đứng yên (boss): không bao giờ rời ô; chỉ đánh ai đứng trong tầm vũ khí', () => {
+  const S = mk(['.......']); const u = beh(put(S, 'vien_kiem', 'dich', 6, 0), { type: 'dung_yen' }); const f = put(S, 'linh', 'ta', 3, 0, { hp: 3 });
+  let p = Core.planTurn(S, u, DATA); assert.strictEqual(p.action, null); eq(p.path, [[6, 0]]);
+  f.x = 5; p = Core.planTurn(S, u, DATA); assert.strictEqual(p.action.type, 'attack'); eq(p.path, [[6, 0]]);
+});
+t('Hộ vệ: chỉ đánh trong bán kính quanh người được hộ vệ, ưu tiên địch đe dọa người đó; không đánh thì đứng cạnh, ô an toàn', () => {
+  //  W = Y sư (0,1). Linh (5,0) đe dọa nó? không — Linh ở xa. Đăng (1,2) kề Y sư.
+  const S = mk(['.......', '.......', '.......']);
+  const ward = put(S, 'vien_y', 'dich', 0, 1), u = beh(put(S, 'vien_kiem', 'dich', 3, 1), { type: 'ho_ve', follow: 'vien_y', radius: 2 });
+  const far = put(S, 'linh', 'ta', 6, 1, { hp: 3 });
+  let p = Core.planTurn(S, u, DATA);                                            // Linh 3 HP dễ hạ nhưng ở ngoài bán kính → không đi
+  assert.strictEqual(p.action, null); assert.ok(Math.abs(p.x - ward.x) + Math.abs(p.y - ward.y) <= 2);
+  const lao = Core.planTurn(S, beh(u, { type: 'lao_vao' }), DATA); assert.strictEqual(lao.action.target, far.uid);   // so sánh: lao_vao thì đi hạ
+  const near = put(S, 'vien_kiem', 'ta', 1, 2);                                 // địch kề Y sư
+  p = Core.planTurn(S, beh(u, { type: 'ho_ve', follow: 'vien_y' }), DATA);
+  assert.strictEqual(p.action.target, near.uid); assert.ok(p.action.parts.guard > 0);
+  ward.hp = 0; assert.strictEqual(Core.planTurn(S, u, DATA).behavior, 'lao_vao');   // người được hộ vệ đã ngã → Lao vào
+});
+t('Đạo tặc: tới ô kề rương → mở (Core.openChest) → chạy tới ô thoát → rời trận; hết rương thì Lao vào', () => {
+  const S = mk(['..........', '..........']); S.exits = [[1, 1]];
+  const u = put(S, 'vien_tac', 'dich', 9, 0); S.chests.push({ x: 5, y: 0, item: 'thuoc_nho', open: false });
+  const f = put(S, 'linh', 'ta', 9, 1);                                         // có mục tiêu ngay cạnh nhưng không đánh
+  let p = Core.planTurn(S, u, DATA);
+  eq(p.action, { type: 'open', x: 5, y: 0 }); assert.strictEqual(Math.abs(p.x - 5) + Math.abs(p.y), 1);
+  u.x = p.x; u.y = p.y; const r = Core.aiAct(S, u, p.action, DATA, { seed: 1 });
+  assert.ok(r.ok); assert.ok(S.chests[0].open); eq(S.chests[0].takenBy, { uid: u.uid, side: 'dich' }); eq(u.loot, ['thuoc_nho']);
+  assert.ok(!Core.openChest(S, u, 5, 0).ok);                                    // mở lại → lỗi
+  p = Core.planTurn(S, u, DATA); assert.strictEqual(p.action && p.action.type, 'escape'); eq([p.x, p.y], [1, 1]);
+  S.exits = [[0, 0]]; assert.strictEqual(Core.planTurn(S, u, DATA).action, null);   // ô thoát ngoài tầm: chỉ chạy về phía đó
+  S.exits = [[1, 1]]; u.x = 1; u.y = 1; assert.ok(Core.aiAct(S, u, p.action, DATA, {}).ok); assert.ok(u.escaped); assert.strictEqual(u.hp, 0);
+  assert.strictEqual(Core.unitAt(S, 1, 1), null);
+  // Hết rương, không mang đồ → then (lao_vao): đánh Linh. Quân không có moRuong không mở được.
+  const v = put(S, 'vien_tac', 'dich', 8, 1); f.hp = 3; assert.strictEqual(Core.planTurn(S, v, DATA).action.target, f.uid);
+  S.chests.push({ x: 2, y: 0, item: 'x', open: false }); const k = put(S, 'vien_kiem', 'dich', 2, 1);
+  assert.ok(/không mở được/.test(Core.openChest(S, k, 2, 0).error));
+});
+t('Đạo tặc ở xa: tiến về rương; không có exits thì mép map là ô thoát', () => {
+  const S = mk(['............', '............', '............']); const u = put(S, 'vien_tac', 'dich', 11, 1, { mov: 3 });
+  S.chests.push({ x: 0, y: 1, item: 'x', open: false });
+  const p = Core.planTurn(S, u, DATA); assert.strictEqual(p.action, null); eq([p.x, p.y], [8, 1]);
+  assert.ok(Core.isExit(S, 0, 2) && Core.isExit(S, 11, 0) && !Core.isExit(S, 5, 1));
+});
+t('Hồi máu: kỹ năng heal = Phép + mt, kẹp HP tối đa, trừ tài nguyên; heal phải nhắm đồng minh', () => {
+  const S = mk(['....']); const h = put(S, 'vien_y', 'dich', 0, 0), a = put(S, 'vien_kiem', 'dich', 1, 0, { hp: 3 });
+  assert.strictEqual(Core.skillForecast(S, h, 'chua', 1, 0, DATA).heal, 9);     // Phép 4 + 5
+  const r = Core.useSkill(S, h, 'chua', 1, 0, DATA, { seed: 1 });
+  assert.ok(r.ok); assert.strictEqual(a.hp, 12); assert.strictEqual(r.effects[0].amount, 9); assert.strictEqual(h.res.linh_luc, 3);
+  Core.useSkill(S, h, 'chua', 1, 0, DATA, {}); assert.strictEqual(a.hp, a.stats.hp);   // kẹp HP tối đa
+  const D = JSON.parse(JSON.stringify(DATA)); D.skills.skills.chua.target = 'enemy'; D.skills.skills.chua.range = [1, 1];
+  assert.ok(/heal cần target ally/.test(Core.validateSkills(D).join()));
+});
+t('Chữa trị: hồi đồng minh máu thấp nhất (theo tỷ lệ); không ai bị thương thì theo đồng minh gần nhất, không hành động', () => {
+  const S = mk(['.......', '.......']);
+  const h = put(S, 'vien_y', 'dich', 3, 1), a = put(S, 'vien_kiem', 'dich', 1, 0, { hp: 12 }), b = put(S, 'vien_giao', 'dich', 5, 0, { hp: 6 });
+  let p = Core.planTurn(S, h, DATA);
+  assert.strictEqual(p.action.skill, 'chua'); assert.strictEqual(p.action.target, b.uid); assert.strictEqual(p.action.parts.heal, 9);
+  a.hp = a.stats.hp; b.hp = b.stats.hp; h.x = 6; h.y = 1; a.x = 0; b.x = 1;
+  p = Core.planTurn(S, h, DATA); assert.strictEqual(p.action, null);
+  assert.ok(Math.abs(p.x - b.x) + Math.abs(p.y - b.y) <= 2, 'đi theo đồng minh gần nhất');
+  h.res.linh_luc = 0; a.hp = 1; assert.strictEqual(Core.planTurn(S, h, DATA).action, null);   // hết Linh lực
+});
+t('Bảo vệ Đăng/Linh: Linh không có nước đánh thì không tiến vào ô bị đe dọa; đồng đội ưu tiên hạ địch đe dọa Linh', () => {
+  //  Linh (0,0) Mov 5, lính (9,0) Mov 5 đe dọa các ô từ x ≥ 3. Quân thường thì tiến tới; Linh thì đứng ngoài tầm.
+  const S = mk(['..........', '..........']); const L = put(S, 'linh', 'ta', 0, 0); put(S, 'vien_kiem', 'dich', 9, 0);
+  let p = Core.planTurn(S, L, DATA); assert.strictEqual(p.action, null); assert.strictEqual(p.parts, undefined);
+  assert.ok(p.score === 0, 'Linh đứng ô không bị đe dọa');
+  L.tpl = 'vien_kiem'; const q = Core.planTurn(S, L, DATA); L.tpl = 'linh';
+  assert.ok(q.score < 0 && q.x > p.x, 'cùng chỉ số nhưng không phải Linh thì tiến vào vùng bị đe dọa');
+  const D = JSON.parse(JSON.stringify(DATA));
+  //  Trấn đứng giữa 2 lính giống hệt nhau: hạ con đang kề Linh.
+  const T = mk(['.....', '.....', '.....']); const tran = put(T, 'tran', 'ta', 2, 1, { mov: 0 });
+  put(T, 'linh', 'ta', 4, 1); const e1 = put(T, 'vien_kiem', 'dich', 1, 1, { hp: 3, mov: 0 }), e2 = put(T, 'vien_kiem', 'dich', 3, 1, { hp: 3, mov: 0 });   // chỉ e2 với tới Linh
+  p = Core.planTurn(T, tran, DATA); assert.strictEqual(p.action.target, e2.uid); assert.ok(p.action.parts.guard > 0);
+  D.ai.weights.lordTile = 3; D.ai.weights.guard = 0; assert.strictEqual(Core.planTurn(T, tran, D).action.target, e1.uid);   // không thưởng → gặp trước
+});
+
+// ---------- AI vs AI (theo seed) ----------
+// Mỗi phe đi lần lượt theo thứ tự S.units; mọi quân dùng planTurn + aiAct. Dừng khi Đăng/Linh ngã, hết địch, hoặc quá 40 lượt.
+function aiVsAi(seed, mapId = 'thu') {
+  const S = Core.loadMap(DATA.maps[mapId], DATA), rng = Core.rng(seed), log = [], seen = {};
   let result = 'hoa';
   outer: for (let turn = 1; turn <= 40; turn++) for (const side of ['ta', 'dich', 'npc']) {
     for (const u of S.units.filter(o => o.side === side)) {
       if (u.hp <= 0) continue;
       const p = Core.planTurn(S, u, DATA);
       assert.ok(Core.canStopAt(Core.reachable(S, u, DATA), p.x, p.y), `seed ${seed}: ô đứng lỗi`);
+      if (p.wake) { u.awake = true; seen.wake = (seen.wake || 0) + 1; }
+      if (u.ai.type === 'dung_yen') assert.ok(p.x === u.home[0] && p.y === u.home[1], `seed ${seed}: boss rời ô`);
+      if (u.ai.type === 'giu_vi_tri') assert.ok(Math.abs(p.x - u.home[0]) + Math.abs(p.y - u.home[1]) <= 2, `seed ${seed}: giữ vị trí rời bán kính`);
       u.x = p.x; u.y = p.y;
-      let res = null; const a = p.action;
-      if (a && a.type === 'attack') {
-        const tg = S.units.find(o => o.uid === a.target), w = u.inventory[a.slot];
-        u.weapon = w; u.inventory.splice(a.slot, 1); u.inventory.unshift(w);
-        res = Core.fight(u, tg, { rng, distance: Math.abs(u.x - tg.x) + Math.abs(u.y - tg.y), atkTerrain: Core.terrainOf(S, u.x, u.y, DATA), defTerrain: Core.terrainOf(S, tg.x, tg.y, DATA) });
-        assert.ok(res.strikes.length, `seed ${seed}: đánh không ra đòn`);
-      } else if (a && a.type === 'skill') {
-        const r = Core.useSkill(S, u, a.skill, a.tx, a.ty, DATA, { rng });
-        assert.ok(r.ok, `seed ${seed}: ${r.error}`); res = r.combat;
-      }
+      const a = p.action, r = a ? Core.aiAct(S, u, a, DATA, { rng }) : null;
+      if (a) { assert.ok(r.ok, `seed ${seed}: ${a.type} lỗi: ${r.error}`); const k = a.type === 'skill' && r.effects.some(e => e.type === 'heal') ? 'heal' : a.type; seen[k] = (seen[k] || 0) + 1; }
+      const res = r && r.combat;
+      if (a && a.type === 'attack') assert.ok(res.strikes.length, `seed ${seed}: đánh không ra đòn`);
       log.push([turn, u.uid, p.x, p.y, a ? a.type : '-', res ? res.strikes.map(s => s.damage) : []]);
       const pos = S.units.filter(o => o.hp > 0).map(o => o.x + ',' + o.y);
       assert.strictEqual(new Set(pos).size, pos.length, `seed ${seed}: hai quân chồng ô`);
+      assert.ok(!S.units.some(o => o.hp > 0 && Core.chestAt(S, o.x, o.y)), `seed ${seed}: quân đứng lên rương`);
       if (res && res.outcome && res.outcome.gameOver) { result = 'dich'; break outer; }
       if (!S.units.some(o => o.side === 'dich' && o.hp > 0)) { result = 'ta'; break outer; }
     }
   }
-  return { result, log };
+  return { result, log, seen, S };
 }
-t('AI vs AI 100 trận trên map thử: không lỗi, không chồng ô, trận nào cũng có đánh nhau', () => {
+t('AI vs AI 100 trận trên map thử: không lỗi, không chồng ô, trận nào cũng có đánh nhau; phe ta biết che Đăng/Linh', () => {
   const tally = { ta: 0, dich: 0, hoa: 0 };
   for (let s = 1; s <= 100; s++) {
     const r = aiVsAi(s); tally[r.result]++;
     assert.ok(r.log.some(l => l[4] !== '-'), `seed ${s}: không ai đánh`);
   }
-  console.log('   kết quả 100 trận:', JSON.stringify(tally));
+  console.log('   kết quả 100 trận (map thử):', JSON.stringify(tally));
+  assert.ok(tally.dich <= 20, 'trước tuần 4 mục 2: địch thắng 78/100');
+});
+t('AI vs AI 100 trận trên map hành vi: đủ 7 hành vi chạy không lỗi; có mở rương, hồi máu, đánh thức, thoát', () => {
+  const tally = { ta: 0, dich: 0, hoa: 0 }, seen = {}; let opened = 0, escaped = 0;
+  for (let s = 1; s <= 100; s++) {
+    const r = aiVsAi(s, 'hanhvi'); tally[r.result]++;
+    for (const k in r.seen) seen[k] = (seen[k] || 0) + r.seen[k];
+    opened += r.S.chests.filter(c => c.open).length; escaped += r.S.units.filter(u => u.escaped).length;
+  }
+  console.log('   kết quả 100 trận (map hành vi):', JSON.stringify(tally), 'hành động:', JSON.stringify(seen), 'rương mở:', opened, 'đạo tặc thoát:', escaped);
+  for (const k of ['attack', 'open', 'heal', 'wake']) assert.ok(seen[k] > 0, 'chưa thấy ' + k);
 });
 t('AI vs AI: cùng seed → cùng nhật ký; khác seed → có thể khác', () => {
-  eq(aiVsAi(7), aiVsAi(7));
+  eq(aiVsAi(7).log, aiVsAi(7).log); eq(aiVsAi(7, 'hanhvi').log, aiVsAi(7, 'hanhvi').log);
   assert.ok([1, 2, 3, 4, 5].some(s => JSON.stringify(aiVsAi(s).log) !== JSON.stringify(aiVsAi(7).log)));
 });
 console.log(n + ' bài kiểm thử đạt');

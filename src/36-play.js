@@ -12,7 +12,8 @@
 //            Đổi vũ khí tự do (GDD 2.5): xác nhận đánh thì món đã chọn thành món đang cầm (lên đầu túi) và quyết định phản đòn lượt địch.
 //   'danh'  đang phát lại trận (P.battle: nhật ký Core.fight + đồng hồ phát lại; phần vẽ đọc qua battleView)
 // P.mode = 'may': lượt Địch / NPC đang tự chạy (Core.planTurn, 38-ai.js). Trận của quân máy phát lại qua P.battle như quân ta;
-//   P.act = hành động chờ chạy sau khi đi xong; P.lastPlan = kế hoạch gần nhất (để soi).
+//   P.act = hành động chờ chạy sau khi đi xong; P.lastPlan = kế hoạch gần nhất, P.lastAct = kết quả Core.aiAct gần nhất (để soi).
+//   Hành vi (38-ai.js): quân 'cho_tam' được đánh thức thì đặt u.awake; đạo tặc thoát thì u.escaped (hp = 0, biến khỏi bàn cờ).
 // P.over: trận đã kết thúc (Đăng/Linh ngã → thua) — mọi thao tác bị khóa.
 // S.phase: 'ta' | 'dich' | 'npc'. Hết lượt NPC thì sang lượt ta mới (S.turn + 1).
 const Play = (() => {
@@ -26,7 +27,7 @@ const Play = (() => {
 
   function create(S, data, seed) {
     const P = { S, data, mode: 'cho', unit: null, R: null, target: null, path: null, anim: null, undo: null, banner: null, queue: [], gap: 0, ver: 0,
-      rng: Core.rng(seed != null ? seed : 1), targets: [], foe: null, fc: null, wpns: [], wpn: null, battle: null, lastFight: null, over: null, act: null, lastPlan: null };
+      rng: Core.rng(seed != null ? seed : 1), targets: [], foe: null, fc: null, wpns: [], wpn: null, battle: null, lastFight: null, over: null, act: null, lastPlan: null, lastAct: null };
     P.banner = { text: `Lượt ${S.turn} · ${NAME.ta}`, side: 'ta', t: 0, dur: BANNER_TIME };
     return P;
   }
@@ -197,24 +198,16 @@ const Play = (() => {
   }
 
   // ----- Quân máy (tuần 4): Core.planTurn (38-ai.js) chọn ô đứng + hành động; đi xong mới đánh. -----
-  // Thực hiện hành động đã lên kế hoạch cho quân máy u. Trả về true nếu có trận để phát lại.
+  // Thực hiện hành động đã lên kế hoạch cho quân máy u (Core.aiAct: đánh / kỹ năng / mở rương / thoát).
+  // Trả về true nếu có trận để phát lại; hành động không có trận (hồi máu, mở rương, thoát) chạy xong ngay.
   function act(P, u, a) {
-    const S = P.S, tg = S.units.find(o => o.uid === a.target);
-    if (!tg || tg.hp <= 0 || u.hp <= 0) return false;
-    const hp0 = { [u.uid]: u.hp, [tg.uid]: tg.hp };
-    let res = null;
-    if (a.type === 'attack') {
-      const w = a.slot >= 0 && u.inventory ? u.inventory[a.slot] : u.weapon;
-      if (!w || !withWeapon(u, w, () => Core.inRange(u, dist(u, tg)))) return false;
-      equip(u, w); res = Core.fight(u, tg, ctxOf(P, u, tg));
-    } else if (a.type === 'skill') {
-      const r = Core.useSkill(S, u, a.skill, a.tx, a.ty, P.data, { rng: P.rng, mode: S.mode || 'casual' });
-      if (!r.ok || !r.combat) return false;
-      res = r.combat;
-    }
-    if (!res || !res.strikes.length) return false;
+    const S = P.S, tg = a.target != null ? S.units.find(o => o.uid === a.target) : null;
+    const hp0 = tg ? { [u.uid]: u.hp, [tg.uid]: tg.hp } : null;
+    const r = Core.aiAct(S, u, a, P.data, { rng: P.rng, mode: S.mode || 'casual' });
+    P.lastAct = r; P.ver++;
+    if (!r.ok || !r.combat || !r.combat.strikes.length) return false;
+    const res = r.combat;
     P.battle = { a: u, d: tg, res, hp0, t: 0, dur: res.strikes.length * STRIKE_TIME + (res.outcome ? KO_TIME : 0) + END_TIME };
-    P.ver++;
     return true;
   }
 
@@ -235,7 +228,7 @@ const Play = (() => {
     if (P.act) { const { u, a } = P.act; P.act = null; if (act(P, u, a)) return; }   // đi xong → đánh
     while (P.queue.length) {
       const id = P.queue.shift(), u = S.units.find(o => o.uid === id); if (!u || u.hp <= 0) continue;
-      u.done = true; const plan = Core.planTurn(S, u, P.data); P.lastPlan = plan;
+      u.done = true; const plan = Core.planTurn(S, u, P.data); P.lastPlan = plan; if (plan.wake) u.awake = true;
       if (plan.path.length > 1) { P.act = plan.action ? { u, a: plan.action } : null; walk(P, u, plan.path); P.ver++; return; }
       if (plan.action && act(P, u, plan.action)) return;
     }

@@ -21,8 +21,12 @@ const HUD = {
     c.fillText(this.hint(), sl + pad, st + pad + fs * 1.5, W - sl - sr - pad * 3 - 104 * d);
     if (HASH.fps && R.fpsText) c.fillText(R.fpsText, sl + pad, st + pad + fs * 2.7);
     const P = G.play;
-    // Nút Hết lượt (góc trên phải): khi đang lượt ta và không ở giữa một nước đi
-    if (S.phase === 'ta' && !Play.busy(P) && (P.mode === 'cho' || P.mode === 'chon')) this.button(c, 'Hết lượt', 'hetluot', W - sr - pad - 104 * d, st + pad, 104 * d, 44 * d, false);
+    if (G.title) { this.title(c, G.title, W, H, d); return; }
+    // Nút Hết lượt (góc trên phải): khi đang lượt ta và không ở giữa một nước đi. Lưu tạm (chiến dịch) nằm ngay dưới.
+    if (S.phase === 'ta' && !Play.busy(P) && (P.mode === 'cho' || P.mode === 'chon')) {
+      this.button(c, 'Hết lượt', 'hetluot', W - sr - pad - 104 * d, st + pad, 104 * d, 44 * d, false);
+      if (G.campaign && Play.canSuspend(P)) this.button(c, 'Lưu tạm', 'luutam', W - sr - pad - 104 * d, st + pad + 52 * d, 104 * d, 40 * d, false);
+    }
     let top = H - sb - pad; // mép trên của khối dưới cùng
     const sel = G.sel, bv = Play.battleView(P);
     if (sel && (P.mode === 'cho' || P.mode === 'chon' || P.mode === 'menu' || P.mode === 'may')) {
@@ -56,7 +60,32 @@ const HUD = {
     }
     if (P.levelUp) this.levelUp(c, P.levelUp, W, H, d);
     else if (P.banner) this.banner(c, P.banner, W, H, d);
-    if (P.over) this.banner(c, { text: P.over.text, sub: P.over.reason, side: P.over.side, t: 1, dur: 2 }, W, H, d);
+    if (P.over) {
+      this.banner(c, { text: P.over.text, sub: P.over.reason, side: P.over.side, t: 1, dur: 2 }, W, H, d);
+      if (G.campaign) this.row(c, P.over.win ? (G.campaign.done ? [['Màn chính', 'manchinh']] : [['Màn chính', 'manchinh'], ['Chương sau', 'chuongsau']]) : [['Màn chính', 'manchinh'], ['Chơi lại chương', 'choilai']], H - sb - pad, sl, sr, W, pad, d);
+    }
+    if (G.toast) this.banner(c, { text: G.toast.text, side: 'ta', t: G.toast.t, dur: G.toast.dur }, W, H, d);
+  },
+  // Màn chính (tuần 5): Tiếp tục (nếu có bản lưu) · Chơi mới Casual / Classic. Bản lưu hỏng/khác phiên bản thì báo, không vỡ.
+  title(c, T, W, H, d) {
+    c.fillStyle = 'rgba(2,3,8,.55)'; c.fillRect(0, 0, W, H);
+    const bw = Math.min(W - 48 * d, 320 * d), bx = (W - bw) / 2, bh = 52 * d, gap = 12 * d;
+    let y = H * .2;
+    c.textAlign = 'center'; c.textBaseline = 'top';
+    c.font = `700 ${40 * d}px system-ui, sans-serif`; c.fillStyle = '#e8b04a'; c.fillText('Vân Đăng', W / 2, y); y += 56 * d;
+    const C = G.campaign, ch = C && Save.chapterOf(C, DATA), info = [];
+    if (T.hasSave && ch) info.push(`${ch.name} · ${C.mode === 'classic' ? 'Classic' : 'Casual'}` + (T.resumed ? ` · lưu tạm lượt ${G.map.turn}` : ''));
+    if (T.done) info.push('Đã hoàn thành chiến dịch · Đèn lồng: ' + T.lanterns);
+    for (const e of T.errors) info.push('⚠ Không nạp được: ' + e);
+    c.font = `400 ${14 * d}px system-ui, sans-serif`;
+    for (const l of info) { c.fillStyle = l[0] === '⚠' ? '#ff8f74' : 'rgba(230,220,200,.9)'; c.fillText(l, W / 2, y, W - 24 * d); y += 22 * d; }
+    c.textAlign = 'left'; y += 16 * d;
+    const btns = [];
+    if (T.hasSave) btns.push(['Tiếp tục', 'tieptuc', true]);
+    for (const [m, label] of [['casual', 'Chơi mới · Casual'], ['classic', 'Chơi mới · Classic']]) btns.push([T.confirm === m ? 'Chạm lại để xoá bản lưu cũ' : label, 'moi_' + m, !T.hasSave && m === 'casual']);
+    for (const [label, act, main] of btns) { this.button(c, label, act, bx, y, bw, bh, main); y += bh + gap; }
+    c.font = `400 ${12 * d}px system-ui, sans-serif`; c.fillStyle = 'rgba(200,190,170,.7)'; c.textAlign = 'center';
+    c.fillText('Casual: quân ngã rút lui, chương sau quay lại · Classic: chết vĩnh viễn', W / 2, y + 4 * d, W - 24 * d); c.textAlign = 'left';
   },
   // Một hàng nút canh phải, nằm trên mép `bottom`. Nút cuối là nút chính.
   row(c, acts, bottom, sl, sr, W, pad, d) {
@@ -223,7 +252,7 @@ const HUD = {
   // Dòng gợi ý theo trạng thái chọn/đi (Play)
   hint() {
     const P = G.play, n = Play.left(P);
-    if (P.over) return 'Trận đã kết thúc · tải lại trang để chơi lại';
+    if (P.over) return G.campaign ? 'Trận đã kết thúc' : 'Trận đã kết thúc · tải lại trang để chơi lại';
     if (P.levelUp) return 'Chạm để tiếp tục';
     if (P.banner) return '';
     if (P.battle) return 'Đang giao chiến…';

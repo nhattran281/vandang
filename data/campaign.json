@@ -1,0 +1,7 @@
+{
+  "_doc": "Danh sách chương của chiến dịch (GDD 9). map = id trong data/maps. win = điều kiện thắng ('rout' = hạ hết địch; tạm, thêm loại khác sau). deadzone: true = Vùng Chết (chết vĩnh viễn ở mọi chế độ, báo trước khi vào trận, GDD 2.9). Hai chương dưới là map thử, thay bằng Ch.1–3 ở mục 3 tuần 5.",
+  "chapters": [
+    { "id": "thu", "name": "Map thử", "map": "thu", "win": "rout" },
+    { "id": "hanhvi", "name": "Map thử hành vi", "map": "hanhvi", "win": "rout" }
+  ]
+}

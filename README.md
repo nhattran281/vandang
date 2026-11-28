@@ -15,6 +15,7 @@ Nền kỹ thuật fork từ [Cinderwatch](https://github.com/kevintngo/cinderwa
 - Tuần 2: tìm đường (`Core.reachable/pathTo/canStopAt`); chạm quân ta để tô vùng đi, chạm ô đích để xem đường, chạm lần nữa để đi; chạm ngoài vùng để hủy. Đi xong chọn **Chờ** hoặc **Hoàn tác**; nút **Hết lượt**; vòng lượt Ta → Địch → NPC (máy tạm thời chỉ tiến về quân ta gần nhất). Bàn phím: mũi tên + Enter, Esc hủy/hoàn tác, E hết lượt.
 - Tuần 3: công thức chiến đấu `src/36-combat.js` (`Core.forecast`, `Core.fight`; 2RN, khắc chế, độ bền, hạng vũ khí). Đi xong, nếu có địch trong tầm vũ khí đang cầm thì menu có **Đánh** → ô đỏ là tầm đánh, chạm một địch để xem **bảng dự báo** (2 cột ta/địch: vũ khí, HP, ST ×2 khi đánh đôi, Trúng, Chí mạng, Độ bền nếu có; khắc chế ghi tên luật màu cam; bên không phản đòn được hiện "–"). Chạm lại mục tiêu hoặc nút **Đánh** để xác nhận → phát lại nhật ký đòn (số bay lên, HP tụt dần, Trượt / Chí mạng), quân về 0 HP rút lui (Casual). Đăng/Linh ngã → Thua trận. Đổi vũ khí tự do (GDD 2.5): mục tiêu tính theo mọi vũ khí dùng được trong túi; thanh **◀ ▶** trên bảng dự báo đổi giữa các món với tới mục tiêu; xác nhận thì món đó thành món đang cầm (lên đầu túi) và quyết định phản đòn lượt địch. Bàn phím: X = Đánh, Tab = đổi mục tiêu, ←/→ = đổi vũ khí, Enter = xác nhận, Esc = quay lại.
 - Tuần 3: khung kỹ năng (logic thuần, chưa có UI) `src/37-skills.js` + `data/skills.json` (GDD 2.6): `Core.skillTargets`, `Core.useSkill`, `Core.skillForecast`, `Core.canAfford`, `Core.refillResources`, `Core.validateSkills`. Tài nguyên riêng mỗi trận (Dầu đèn, Nhịp đàn, Linh lực, Niệm lực), hồi đầy đầu trận; tầm ≤ `rangeCap` (4 ≈ 1/3 cạnh map). Đăng có Soi · Trấn · Hỏa · Hộ (6 Dầu đèn). Kỹ năng sát thương dùng công thức + khắc chế của `36-combat.js` (1 đòn, không phản đòn, không đánh đôi); trạng thái/môi trường mới ghi nhận vào kết quả, làm thật ở tuần 8.
+- Tuần 5: lưu game `src/39-save.js` + `data/campaign.json` (GDD 5.4, 2.9, 9). Trạng thái chiến dịch JSON có số phiên bản (chương, chế độ Casual/Classic, đội: cấp/EXP/chỉ số/hạng/túi đồ/ai đã chết, đồ lấy được, rương giữ được → số đèn lồng). Lưu tự động sau mỗi chương + 1 ô **Lưu tạm** giữa trận (gồm trạng thái RNG, nạp lại chơi tiếp ra đúng kết quả cũ). Màn chính: Tiếp tục / Chơi mới · Casual / Chơi mới · Classic; bản lưu hỏng hoặc khác phiên bản thì báo, không vỡ game. Thắng tạm thời = hạ hết địch. `#map=…` vẫn chạy map thử như cũ (không lưu).
 
 ## Chạy, build, test
 
@@ -25,6 +26,7 @@ node tools/test_combat.js   # test công thức chiến đấu (2RN, dự báo, 
 node tools/test_skills.js   # test khung kỹ năng (mục tiêu, tài nguyên, sát thương kỹ năng)
 node tools/test_ai.js       # test AI chấm điểm + AI vs AI
 node tools/test_level.js    # test bảng class, EXP, lên cấp, hạng vũ khí
+node tools/test_save.js     # test lưu game (chiến dịch, lưu chương, lưu tạm + RNG, bản lưu hỏng)
 ```
 
 Mở `index.html` (chạy được từ `file://`). Cờ URL: `#map=thu`, `#biome=fen`, `#sel=4,5` (chọn sẵn ô), `#seed=N`, `#fps=1`, `#manual=1`.

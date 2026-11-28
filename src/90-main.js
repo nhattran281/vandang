@@ -54,6 +54,29 @@ function camZoomBy(f) { camZoomTo(camZoomNow() * f); }
 // ===== Vân Đăng · Vòng lặp chính =====
 // Trạng thái chạy của ứng dụng (không phải logic trận). 20-post đọc G.phase.
 const G = { t: 0, phase: 'play', paused: false, speed: 1, map: null, B: null, sel: null, cursor: null, play: null, last: '' };
+// Lưu game (tuần 5, 39-save): G.store = nơi lưu; G.campaign = chiến dịch đang chơi (null khi chạy map thử #map=…).
+// G.title = màn chính (Tiếp tục / Chơi mới) đang mở; G.ended = đã xử lý kết thúc trận; G.toast = thông báo ngắn.
+Object.assign(G, { store: null, campaign: null, title: null, ended: false, toast: null });
+
+// Tải lại trang để dựng bàn cờ của chương khác (đơn giản và chắc hơn gỡ/dựng lại cảnh three.js). go = vào thẳng trận, bỏ màn chính.
+function relaunch(go) { try { location.hash = go ? 'go=1' : ''; location.reload(); } catch (e) {} }
+function toast(text) { G.toast = { text, t: 0, dur: 1.8 }; }
+// Chơi mới: chiến dịch mới ở chương 1, xoá lưu tạm, lưu ngay (để Tiếp tục được). Có bản lưu cũ thì phải chạm 2 lần.
+function newGame(mode) {
+  const T = G.title;
+  if (T && T.hasSave && T.confirm !== mode) { T.confirm = mode; return true; }
+  const C = Save.newCampaign(DATA, { mode, seed: (Date.now() ^ (Math.random() * 4294967296)) >>> 0 });
+  G.store.clear('suspend'); const w = G.store.saveChapter(C);
+  if (!w.ok) { if (T) T.errors = [w.error]; return false; }
+  relaunch(true); return true;
+}
+// Kết thúc trận (gọi một lần): thắng → ghi chiến dịch sang chương sau + xoá lưu tạm.
+function onBattleEnd(over) {
+  if (!G.campaign || !over.win) return;
+  const C = G.campaign = Save.finishChapter(G.campaign, G.map, DATA);
+  G.store.clear('suspend'); const w = G.store.saveChapter(C);
+  over.reason = w.ok ? (C.done ? 'Đã hết chiến dịch · Đèn lồng: ' + Save.lanterns(C) : 'Đã lưu sau chương') : w.error;
+}
 
 // Từ toạ độ màn hình (CSS px) ra ô map: chiếu tia camera xuống mặt phẳng, tinh chỉnh theo độ cao ô.
 const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _pl = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), _hit = new THREE.Vector3();
@@ -78,7 +101,15 @@ function tapTile(p) {
 // Nút HUD: Chờ / Hoàn tác / Hết lượt
 function hudAction(act) {
   const P = G.play; let ok = false;
-  if (act === 'cho') { ok = Play.wait(P); if (ok) G.sel = null; }
+  if (G.title) {   // màn chính: chỉ các nút của nó
+    if (act === 'tieptuc' && G.title.hasSave) { G.title = null; ok = true; }
+    else if (act === 'moi_casual' || act === 'moi_classic') ok = newGame(act === 'moi_casual' ? 'casual' : 'classic');
+    G.last = act; return ok;
+  }
+  if (act === 'luutam') { if (G.campaign && Play.canSuspend(P)) { const w = G.store.saveSuspend(G.campaign, P); toast(w.ok ? 'Đã lưu tạm' : w.error); ok = w.ok; } }
+  else if (act === 'chuongsau' || act === 'choilai') { if (act === 'choilai') G.store.clear('suspend'); relaunch(true); ok = true; }
+  else if (act === 'manchinh') { relaunch(false); ok = true; }
+  else if (act === 'cho') { ok = Play.wait(P); if (ok) G.sel = null; }
   else if (act === 'hoantac') { ok = Play.undo(P); if (ok) selectTile({ x: P.unit.x, y: P.unit.y }); }
   else if (act === 'hetluot') { ok = Play.endTurn(P); if (ok) G.sel = null; }
   else if (act === 'danh') ok = Play.attack(P);
@@ -101,12 +132,13 @@ function initInput() {
     }
     p.x = e.clientX; p.y = e.clientY;
   });
-  const up = e => { const p = pts.get(e.pointerId); if (!p) return; pts.delete(e.pointerId); if (!drag && !pinch && pts.size === 0) { const act = HUD.hit(e.clientX, e.clientY); if (act) hudAction(act); else tapTile(pickTile(e.clientX, e.clientY)); } if (pts.size === 0) pinch = 0; };
+  const up = e => { const p = pts.get(e.pointerId); if (!p) return; pts.delete(e.pointerId); if (!drag && !pinch && pts.size === 0) { const act = HUD.hit(e.clientX, e.clientY); if (act) hudAction(act); else if (!G.title) tapTile(pickTile(e.clientX, e.clientY)); } if (pts.size === 0) pinch = 0; };
   el.addEventListener('pointerup', up); el.addEventListener('pointercancel', e => { pts.delete(e.pointerId); drag = 1; });
   el.addEventListener('wheel', e => { e.preventDefault(); camZoomAt(Math.exp(-e.deltaY * .0015), e.clientX * R.dpr, e.clientY * R.dpr); }, { passive: false });
   window.addEventListener('keydown', e => {
     const s = G.sel; let m = null;
     const P = G.play;
+    if (G.title) return;
     if (P.levelUp) { hudAction('lencap'); return; }
     if (P.mode === 'menu') { if (e.key === 'Enter' || e.key === ' ') hudAction('cho'); else if (e.key === 'Escape' || e.key === 'Backspace') hudAction('hoantac'); else if (e.key === 'x' || e.key === 'X') hudAction('danh'); return; }
     if (P.mode === 'muctieu') { if (e.key === 'Escape' || e.key === 'Backspace') hudAction('quaylai'); else if (P.fc && (e.key === 'Enter' || e.key === ' ')) hudAction('xacnhan'); else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') hudAction(e.key === 'ArrowLeft' ? 'vukhitruoc' : 'vukhisau'); else if (e.key === 'Tab') { e.preventDefault(); const l = P.targets, i = (l.indexOf(P.foe) + 1) % l.length; Play.aim(P, l[i]); selectTile(l[i]); } return; }
@@ -124,7 +156,9 @@ function step(dt) {
   G.t += dt; SH.uTime.value = G.t;
   beginParts();
   updateFX(dt, G.t);
-  Play.update(G.play, dt);
+  if (!G.title) Play.update(G.play, dt);
+  if (G.play.over && !G.ended) { G.ended = true; onBattleEnd(G.play.over); }
+  if (G.toast && (G.toast.t += dt) >= G.toast.dur) G.toast = null;
   drawUnits(G.map, G.t, G.play);
   updateOverlay(G.play, G.t);
   const c = G.cursor; if (G.sel) { const w = tileWorld(G.map, G.sel.x, G.sel.y); c.visible = true; c.position.set(w.x, standY(G.map, G.sel.x, G.sel.y) + .04, w.z); c.material.opacity = .6 + .3 * Math.sin(G.t * 5); } else c.visible = false;
@@ -163,13 +197,27 @@ function boot() {
   if (window.matchMedia && matchMedia('(pointer: coarse)').matches && !HASH.noscale) R.quality = .85;
   R.viewH = 26; R.fitW = 44; R.fitTall = 29; // khung nhìn vừa bàn cờ 12x16
   initRenderer(); initMaterials(); resizeRenderer(); initLights(); initFX(); initWeather(); initKits(); HUD.init();
-  const id = HASH.map || 'thu', raw = DATA.maps[id];
-  if (!raw) throw new Error('không có map ' + id);
-  const S = G.map = Core.loadMap(raw, DATA);
+  // Trận: #map=… chạy map thử như trước (không lưu). Còn lại là chiến dịch: nạp bản lưu (lưu tạm > lưu chương) hoặc dựng chiến dịch mới làm nền màn chính.
+  G.store = Save.store(null, DATA);
+  let S, seed = +(HASH.seed || 1);
+  if (HASH.map) {
+    const raw = DATA.maps[HASH.map]; if (!raw) throw new Error('không có map ' + HASH.map);
+    S = Core.loadMap(raw, DATA);
+  } else {
+    const r = G.store.resume(), usable = r.ok && !r.done;
+    const C = usable ? r.C : Save.newCampaign(DATA), st = usable ? r : Save.begin(Save.envChapter(C), DATA);
+    G.campaign = C; S = st.S; seed = st.rng;
+    const errors = r.errors || [];
+    G.title = HASH.go && usable ? null : { hasSave: usable, resumed: usable && r.resumed, done: !!(r.ok && r.done), lanterns: r.ok && r.done ? Save.lanterns(r.C) : 0, errors, confirm: null };
+    if (HASH.go) try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  }
+  G.map = S;
   if (HASH.biome) S.biome = HASH.biome;
   const B = G.B = buildGridBoard(S, +(HASH.seed || 1));
   R.scene.add(B.group); activateGridBoard(B);
-  G.play = Play.create(S, DATA, +(HASH.seed || 1));
+  G.play = Play.create(S, DATA, seed);
+  if (S.chapterName) G.play.banner.text = S.chapterName + ' · Lượt ' + S.turn;
+  if (S.mode === 'deadzone') { G.play.banner.sub = 'Vùng Chết · quân ngã sẽ chết vĩnh viễn'; G.play.banner.dur = 2.6; }
   initUnitViews(S); initOverlay(); G.cursor = makeTileCursor(); initInput();
   window.addEventListener('resize', resizeRenderer);
   window.addEventListener('orientationchange', () => setTimeout(resizeRenderer, 120));
@@ -178,7 +226,7 @@ function boot() {
   R.canvas.addEventListener('webglcontextrestored', () => location.reload());
   document.addEventListener('visibilitychange', () => { if (!document.hidden) _last = performance.now(); });
   // Móc cho công cụ (tools/cdp.js, tools/record.js): __vd, giữ tên cũ __cw để công cụ Cinderwatch vẫn chạy.
-  window.__vd = window.__cw = { G, R, CAM, LT, FX, Core, Play, OVL, DATA, step, pickTile, screenOfTile, selectTile, tapTile, hudAction, HUD, tick(dt, render) { R.frameDt = dt; step(dt); R.fade = 1; applyCamera(); if (render) renderFrame(); HUD.draw(); } };
+  window.__vd = window.__cw = { G, R, CAM, LT, FX, Core, Play, Save, OVL, DATA, step, pickTile, screenOfTile, selectTile, tapTile, hudAction, HUD, tick(dt, render) { R.frameDt = dt; step(dt); R.fade = 1; applyCamera(); if (render) renderFrame(); HUD.draw(); } };
   if (HASH.sel) { const [x, y] = HASH.sel.split(',').map(Number); selectTile({ x, y }); }
   if (HASH.ff) { const n = Math.round(+HASH.ff * 30); for (let i = 0; i < n; i++) step(1 / 30); R.fade = 1; }
   if (HASH.cam) window.__vd.lock = HASH.cam.split(',').map(Number);

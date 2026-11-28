@@ -1,5 +1,13 @@
 {
-  "_doc": "Mẫu đơn vị. class: id trong data/classes.json. base: chỉ số gốc cá nhân, CỘNG vào base class (GDD 5.2); growth: growth % cá nhân, CỘNG vào growth class (có thể âm, kết quả kẹp ≥ 0). unique: true (nhân vật có tên): chỉ số = base class + base cá nhân (đã tính sẵn cấp gia nhập lv). Quân thường (lính, quái, NPC; không có unique): cộng thêm floor((lv − 1) × growth class / 100) — roster map ghi { tpl, lv } để đổi cấp. boss: true → hạ gục +40 EXP (GDD 5.1). weapons: id trong data/weapons.json, cái đầu tiên cầm được là vũ khí đang trang bị. ranks: hạng vũ khí theo loại (E/C/A/S), tăng bằng điểm kinh nghiệm vũ khí (weapons.json → weaponExp). skills: id trong data/skills.json; resources: mức tối đa tài nguyên mỗi trận (GDD 2.6). look: gợi ý cho phần vẽ (phần logic bỏ qua). ai: hành vi AI mặc định (data/ai.json → behaviors; thiếu = lao_vao), roster của map ghi đè được. moRuong: mở được rương.",
+  "_doc": "Mẫu đơn vị. class: id trong data/classes.json. base: chỉ số gốc cá nhân, CỘNG vào base class (GDD 5.2); growth: growth % cá nhân, CỘNG vào growth class (có thể âm, kết quả kẹp ≥ 0). unique: true (nhân vật có tên): chỉ số = base class + base cá nhân (đã tính sẵn cấp gia nhập lv). Quân thường (lính, quái, NPC; không có unique): cộng thêm floor((lv − 1) × growth class / 100) — roster map ghi { tpl, lv } để đổi cấp. boss: true → hạ gục +40 EXP (GDD 5.1). weapons: id trong data/weapons.json, cái đầu tiên cầm được là vũ khí đang trang bị. ranks: hạng vũ khí theo loại (E/C/A/S), tăng bằng điểm kinh nghiệm vũ khí (weapons.json → weaponExp). skills: id trong data/skills.json; resources: mức tối đa tài nguyên mỗi trận (GDD 2.6). look: gợi ý cho phần vẽ (phần logic bỏ qua). ai: hành vi AI mặc định (data/ai.json → behaviors; thiếu = lao_vao), roster của map ghi đè được. moRuong: mở được rương. tags: Nguoi / Ma / Yeu / Bay / Thuy (GDD 2.4). Túi vũ khí và ranks phải thuộc weaponTypes của class (classes.json). traits: cơ chế riêng của quái, khai báo dạng dữ liệu (loại ở traitTypes); live: false = chưa chạy, làm thật ở tuần 8.",
+  "_look": "look (phần vẽ, 55-units.js): rig = foot | ogre | skel | golem (người, 50-rig) · wraith | wolf | toad | wisp | spider | bat | rat | slime (51-bestiary / 50-rig). tint [r,g,b], scale. Rig người nhận thêm: weapon (sword | blade | greatsword | club | staff), shield (shieldR | shieldH), helm, plate, robe, hood, torch, lantern ('blue'), bow, drum, wraps, crown, shamble (dáng lê bước), claw (hai tay vươn trước), heavy. Mọi hình dáng là thiết kế gốc theo dân gian Việt, u ám không ghê rợn; bộ phận riêng (nón mê, đàn nguyệt, nỏ) dựng ở tuần 7 — ghi ở _tuan7.",
+  "traitTypes": {
+    "_doc": "Cơ chế riêng của quái (GDD 8). live: false = chỉ ghi nhận, làm thật ở tuần 8 (tuan). Tham số khai báo ở từng mẫu (units.json → traits).",
+    "keo_nuoc":       { "live": false, "tuan": 8, "_doc": "Kéo (Ma da): đánh trúng quân đứng mép nước (ô kề ô có cờ nuoc) thì kéo nó xuống ô nước kề nhất, dist ô." },
+    "an_nuoc":        { "live": false, "tuan": 8, "_doc": "Ẩn dưới nước (Ma da): đứng ô nước thì không lộ cho tới khi có quân đối phương kề bên (cần sương/tầm nhìn tuần 8)." },
+    "tiep_suc":       { "live": false, "tuan": 8, "_doc": "Tiếp sức (Ma trành): mỗi đơn vị mang trait còn sống cộng stats cho mọi đơn vị cùng phe dựng từ mẫu to. Hạ trành thì chủ yếu đi (GDD 8, Ch.3)." },
+    "gay_trang_thai": { "live": false, "tuan": 8, "_doc": "Đánh trúng thì gây trạng thái status (GDD 2.7) trong turns lượt; chance 0–100 (thiếu = luôn gây)." }
+  },
   "templates": {
     "dang": {
       "unique": true,
@@ -45,6 +53,36 @@
       "growth": { "hp": -60, "str": -40, "skl": -25, "spd": -15, "lck": -10, "def": -40, "res": -5 },
       "look": { "rig": "foot", "tint": [0.85, 0.78, 0.6], "scale": 1.08, "weapon": "sword", "shield": "shieldR", "helm": true, "plate": true }
     },
+    "cuoi": {
+      "unique": true,
+      "name": "Cuội",
+      "title": "Kẻ Nói Phét",
+      "tags": ["Nguoi"],
+      "moveType": "bo",
+      "lv": 2,
+      "weapons": [],
+      "ranks": {},
+      "skills": ["hat_xam", "noi_phet", "ve_khich"],
+      "resources": { "nhip_dan": 4 },
+      "class": "hat_rong",
+      "base": { "hp": 1, "skl": 1, "spd": 1, "lck": 3, "res": 1 },
+      "growth": { "spd": 10, "lck": 20 },
+      "look": { "rig": "foot", "tint": [0.66, 0.6, 0.47], "scale": 0.95, "drum": true, "_tuan7": "nón mê rách, áo the bạc màu, đàn nguyệt (drum là nhạc cụ tạm)" }
+    },
+    "hung_no": {
+      "unique": true,
+      "name": "Hùng Nỏ",
+      "title": "Thợ săn rừng",
+      "tags": ["Nguoi"],
+      "moveType": "bo",
+      "lv": 4,
+      "weapons": ["no_tay"],
+      "ranks": { "no": "C", "cung": "E" },
+      "class": "cung_thu",
+      "base": { "hp": 4, "str": 2, "skl": 3, "spd": 2, "lck": 2, "def": 1, "res": 1, "con": 1 },
+      "growth": { "str": 5, "skl": 10, "def": 5 },
+      "look": { "rig": "foot", "tint": [0.42, 0.5, 0.32], "bow": true, "hood": true, "_tuan7": "nỏ gỗ khắc hoa văn trống đồng, áo chàm lá rừng (bow là nỏ tạm)" }
+    },
     "vien_kiem": {
       "name": "Lính Viện",
       "title": "Kiếm",
@@ -68,6 +106,19 @@
       "class": "linh_giao",
       "base": { "hp": 1, "def": 1 },
       "look": { "rig": "foot", "tint": [0.95, 0.45, 0.38], "weapon": "club", "shield": "shieldH", "helm": true }
+    },
+    "vien_cung": {
+      "name": "Lính Viện",
+      "title": "Cung",
+      "tags": ["Nguoi"],
+      "moveType": "bo",
+      "lv": 2,
+      "ai": { "type": "giu_vi_tri", "radius": 2 },
+      "weapons": ["cung_go"],
+      "ranks": { "cung": "E" },
+      "class": "cung_thu",
+      "base": {},
+      "look": { "rig": "foot", "tint": [0.95, 0.45, 0.38], "bow": true, "helm": true }
     },
     "vien_tac": {
       "name": "Đạo tặc",
@@ -97,6 +148,63 @@
       "class": "y_su",
       "base": {},
       "look": { "rig": "foot", "tint": [0.95, 0.8, 0.7], "robe": true, "hood": true }
+    },
+    "ma_da": {
+      "name": "Ma da",
+      "title": "Ma, Thủy",
+      "tags": ["Ma", "Thuy"],
+      "moveType": "thuy",
+      "lv": 2,
+      "ai": { "type": "cho_tam" },
+      "weapons": ["tay_ma"],
+      "ranks": { "vuot": "E" },
+      "class": "ma_nuoc",
+      "base": {},
+      "traits": [ { "type": "keo_nuoc", "dist": 1 }, { "type": "an_nuoc" } ],
+      "look": { "rig": "wraith", "tint": [0.32, 0.46, 0.48], "scale": 0.9, "_tuan7": "bóng người tóc rũ ướt, nửa chìm dưới nước, rong rêu quấn tay" }
+    },
+    "ma_tranh": {
+      "name": "Ma trành",
+      "title": "Ma",
+      "tags": ["Ma"],
+      "moveType": "bo",
+      "lv": 1,
+      "ai": { "type": "giu_vi_tri", "radius": 1 },
+      "weapons": ["tay_ma"],
+      "ranks": { "vuot": "E" },
+      "class": "ma_tranh",
+      "base": {},
+      "traits": [ { "type": "tiep_suc", "to": "hum_tinh", "stats": { "str": 2, "spd": 2 } } ],
+      "look": { "rig": "foot", "tint": [0.5, 0.48, 0.42], "scale": 0.92, "hood": true, "robe": true, "shamble": true, "_tuan7": "người xám mờ, áo nâu sờn, lê bước như bị dắt, đốm mắt vàng như mắt hổ" }
+    },
+    "hum_tinh": {
+      "unique": true,
+      "boss": true,
+      "name": "Hùm tinh",
+      "title": "Yêu",
+      "tags": ["Yeu"],
+      "moveType": "bo",
+      "lv": 6,
+      "ai": { "type": "giu_vi_tri", "radius": 2 },
+      "weapons": ["nanh_hum"],
+      "ranks": { "vuot": "E" },
+      "class": "yeu_thu",
+      "base": { "hp": 6, "str": 2, "skl": 1, "spd": 1, "lck": 2, "def": 2, "res": 1 },
+      "look": { "rig": "wolf", "tint": [0.86, 0.55, 0.24], "scale": 1.7, "_tuan7": "hổ già lông vằn sẫm như than, mắt lân tinh, khói đen bốc từ vằn; dáng thú, không máu me" }
+    },
+    "ma_de": {
+      "name": "Ma đè",
+      "title": "Ma",
+      "tags": ["Ma"],
+      "moveType": "bo",
+      "lv": 2,
+      "ai": { "type": "cho_tam" },
+      "weapons": ["bong_de"],
+      "ranks": { "am_khi": "E" },
+      "class": "bong_de",
+      "base": {},
+      "traits": [ { "type": "gay_trang_thai", "status": "ngu", "turns": 2 } ],
+      "look": { "rig": "ogre", "tint": [0.22, 0.2, 0.3], "scale": 0.85, "hood": true, "robe": true, "claw": true, "_tuan7": "khối bóng tối lùn đè nặng, không mặt, hai tay dài buông, hơi lạnh" }
     },
     "dan_lang": {
       "name": "Dân làng",

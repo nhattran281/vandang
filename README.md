@@ -6,7 +6,7 @@ Nền kỹ thuật fork từ [Cinderwatch](https://github.com/kevintngo/cinderwa
 
 ![Map thử trên điện thoại](media/tuan1-dien-thoai.jpg)
 
-## Trạng thái: Tuần 3 (đánh được)
+## Trạng thái: Tuần 5 (lên cấp, lưu game, đủ quân Ch.1–3)
 
 - Đã gỡ logic tower defense (`60-towers`, `61-monsters`, `62-game`).
 - Dữ liệu dạng JSON trong `data/`, được nhúng vào bản build.
@@ -16,6 +16,7 @@ Nền kỹ thuật fork từ [Cinderwatch](https://github.com/kevintngo/cinderwa
 - Tuần 3: công thức chiến đấu `src/36-combat.js` (`Core.forecast`, `Core.fight`; 2RN, khắc chế, độ bền, hạng vũ khí). Đi xong, nếu có địch trong tầm vũ khí đang cầm thì menu có **Đánh** → ô đỏ là tầm đánh, chạm một địch để xem **bảng dự báo** (2 cột ta/địch: vũ khí, HP, ST ×2 khi đánh đôi, Trúng, Chí mạng, Độ bền nếu có; khắc chế ghi tên luật màu cam; bên không phản đòn được hiện "–"). Chạm lại mục tiêu hoặc nút **Đánh** để xác nhận → phát lại nhật ký đòn (số bay lên, HP tụt dần, Trượt / Chí mạng), quân về 0 HP rút lui (Casual). Đăng/Linh ngã → Thua trận. Đổi vũ khí tự do (GDD 2.5): mục tiêu tính theo mọi vũ khí dùng được trong túi; thanh **◀ ▶** trên bảng dự báo đổi giữa các món với tới mục tiêu; xác nhận thì món đó thành món đang cầm (lên đầu túi) và quyết định phản đòn lượt địch. Bàn phím: X = Đánh, Tab = đổi mục tiêu, ←/→ = đổi vũ khí, Enter = xác nhận, Esc = quay lại.
 - Tuần 3: khung kỹ năng (logic thuần, chưa có UI) `src/37-skills.js` + `data/skills.json` (GDD 2.6): `Core.skillTargets`, `Core.useSkill`, `Core.skillForecast`, `Core.canAfford`, `Core.refillResources`, `Core.validateSkills`. Tài nguyên riêng mỗi trận (Dầu đèn, Nhịp đàn, Linh lực, Niệm lực), hồi đầy đầu trận; tầm ≤ `rangeCap` (4 ≈ 1/3 cạnh map). Đăng có Soi · Trấn · Hỏa · Hộ (6 Dầu đèn). Kỹ năng sát thương dùng công thức + khắc chế của `36-combat.js` (1 đòn, không phản đòn, không đánh đôi); trạng thái/môi trường mới ghi nhận vào kết quả, làm thật ở tuần 8.
 - Tuần 5: lưu game `src/39-save.js` + `data/campaign.json` (GDD 5.4, 2.9, 9). Trạng thái chiến dịch JSON có số phiên bản (chương, chế độ Casual/Classic, đội: cấp/EXP/chỉ số/hạng/túi đồ/ai đã chết, đồ lấy được, rương giữ được → số đèn lồng). Lưu tự động sau mỗi chương + 1 ô **Lưu tạm** giữa trận (gồm trạng thái RNG, nạp lại chơi tiếp ra đúng kết quả cũ). Màn chính: Tiếp tục / Chơi mới · Casual / Chơi mới · Classic; bản lưu hỏng hoặc khác phiên bản thì báo, không vỡ game. Thắng tạm thời = hạ hết địch. `#map=…` vẫn chạy map thử như cũ (không lưu).
+- Tuần 5 mục 3: đủ class + nhân vật + quái cho Ch.1–3 (GDD 7, 8). Class mới: Hát Rong (Cuội), Cung Thủ (Hùng Nỏ, lính Viện cung), Ma Nước, Ma Trành, Yêu Thú, Bóng Đè; mỗi class ghi `weaponTypes` (loại vũ khí cầm được). Phe ta thêm **Cuội** (Nhịp đàn 4: Hát Xẩm · Nói Phét · Vè Khích — dữ liệu, hiệu ứng chạy ở tuần 8) và **Hùng Nỏ** (Nỏ tay, khắc Bay). Địch: lính Viện kiếm/giáo/cung, Ma da (Ma, Thủy, chỉ đi nước), Ma trành, Hùm tinh (boss nhỏ, Yêu), Ma đè (Ma, Âm khí đánh vào Kháng); hành vi AI mặc định khai báo trong mẫu. Vũ khí bẩm sinh của quái: loại `vuot` (Nanh vuốt) và `am_khi` (Âm khí). Cơ chế riêng của quái (Ma da kéo/ẩn nước, trành tiếp sức Hùm tinh, Ma đè gây Ngủ) ghi ở `units.json → traits` / `traitTypes` (live: false, tuần 8). **Cung/nỏ đứng cao hơn mục tiêu +1 tầm** (GDD 3.2; `weapons.json → types.highGround`, `Core.rangeBonus`), áp cả khi phản đòn, cho bảng dự báo, menu Đánh và AI. Phần vẽ đọc `look.rig` (người: foot/ogre/…; quái: wraith/wolf/…) và các cờ bộ phận (`units.json → _look`).
 
 ## Chạy, build, test
 
@@ -27,6 +28,7 @@ node tools/test_skills.js   # test khung kỹ năng (mục tiêu, tài nguyên, 
 node tools/test_ai.js       # test AI chấm điểm + AI vs AI
 node tools/test_level.js    # test bảng class, EXP, lên cấp, hạng vũ khí
 node tools/test_save.js     # test lưu game (chiến dịch, lưu chương, lưu tạm + RNG, bản lưu hỏng)
+node tools/test_data.js     # test dữ liệu class/nhân vật/quái Ch.1–3, cơ chế quái (tuần 8), cung/nỏ đứng cao +1 tầm
 ```
 
 Mở `index.html` (chạy được từ `file://`). Cờ URL: `#map=thu`, `#biome=fen`, `#sel=4,5` (chọn sẵn ô), `#seed=N`, `#fps=1`, `#manual=1`.
@@ -43,7 +45,9 @@ CHROME=/usr/bin/google-chrome node tools/cdp.js "" 390,844 "tapat:__vd.screenOfT
 | Đường dẫn | Nội dung |
 | --- | --- |
 | `data/terrain.json` | Bảng địa hình (GDD 3.1): chi phí đi theo loại quân, Né, Thủ |
-| `data/units.json` | Mẫu đơn vị: chỉ số (GDD 2.2), nhãn, loại di chuyển, `look` cho phần vẽ |
+| `data/units.json` | Mẫu đơn vị: class + chỉ số cá nhân, nhãn, loại di chuyển, túi vũ khí, kỹ năng, hành vi AI, cơ chế quái (`traits`), `look` cho phần vẽ |
+| `data/classes.json` | Bảng class (GDD 5.2): chỉ số gốc, growth, loại vũ khí cầm được |
+| `data/weapons.json` | Vũ khí, loại vũ khí, khắc chế (GDD 2.4–2.5), `highGround` cho cung/nỏ |
 | `data/skills.json` | Kỹ năng chủ động (GDD 2.6): tài nguyên, giá, tầm, loại mục tiêu, hiệu ứng dạng dữ liệu |
 | `data/maps/*.json` | Map: 3 lớp ASCII + roster |
 | `src/00-util` … `29-biome`, `40-fx`, `41-weather`, `50-rig`, `51-bestiary`, `70-pixelfont`, `80-audio` | Module nền giữ từ Cinderwatch |

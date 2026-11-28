@@ -61,17 +61,18 @@ Object.assign(Core, (() => {
     return r;
   }
 
-  // Vùng đe dọa của o trong lượt sau: ô idx → [vũ khí, khoảng cách] đầu tiên tìm được (o đi tới một ô dừng rồi đánh).
+  // Vùng đe dọa của o trong lượt sau: ô idx → [vũ khí, khoảng cách, độ cao ô đứng] đầu tiên tìm được (o đi tới một ô dừng rồi đánh).
   function threatOf(S, o, data) {
     const R = Core.reachable(S, o, data), cover = new Map(), ws = usableWeapons(o);
     for (const i of R.stops) {
-      const sx = i % S.w, sy = (i / S.w) | 0;
+      const sx = i % S.w, sy = (i / S.w) | 0, sh = Core.heightAt(S, sx, sy);
       for (const w of ws) {
-        const hi = w.maxRange != null ? w.maxRange : w.minRange;
+        const base = w.maxRange != null ? w.maxRange : w.minRange, hi = base + (w.highGround | 0);   // cung/nỏ đứng cao +1 tầm
         for (let y = Math.max(0, sy - hi); y <= Math.min(S.h - 1, sy + hi); y++)
           for (let x = Math.max(0, sx - hi); x <= Math.min(S.w - 1, sx + hi); x++) {
             const d = dist(sx, sy, x, y), k = y * S.w + x;
-            if (d >= w.minRange && d <= hi && !cover.has(k)) cover.set(k, [w, d]);
+            const top = base + (w.highGround && sh > Core.heightAt(S, x, y) ? w.highGround : 0);
+            if (d >= w.minRange && d <= top && !cover.has(k)) cover.set(k, [w, d, sh]);
           }
       }
     }
@@ -135,7 +136,7 @@ Object.assign(Core, (() => {
       if (riskCache.has(k)) return riskCache.get(k);
       const c = t.cover.get(y * S.w + x); let r = 0;
       if (c) {
-        const fc = withWeapon(t.o, c[0], () => Core.forecast(t.o, v, { distance: c[1], defTerrain: Core.terrainOf(S, x, y, data), noCounter: true }));
+        const fc = withWeapon(t.o, c[0], () => Core.forecast(t.o, v, { distance: c[1], defTerrain: Core.terrainOf(S, x, y, data), atkH: c[2], defH: Core.heightAt(S, x, y), noCounter: true }));
         r = expect(fc, t.o.hp, v.hp).dealt;
       }
       riskCache.set(k, r); return r;
@@ -156,11 +157,11 @@ Object.assign(Core, (() => {
     const consider = o => { if (o.type !== 'skill' || o.parts.heal == null) canHit = true; if (!best || o.score > best.score) best = o; };
     for (const [x, y] of stops) {
       if (!allowed([x, y])) continue;
-      const tT = Core.terrainOf(S, x, y, data);
+      const tT = Core.terrainOf(S, x, y, data), tH = Core.heightAt(S, x, y);
       for (const tg of foes) {
-        const d = dist(x, y, tg.x, tg.y), gT = Core.terrainOf(S, tg.x, tg.y, data);
+        const d = dist(x, y, tg.x, tg.y), gT = Core.terrainOf(S, tg.x, tg.y, data), gH = Core.heightAt(S, tg.x, tg.y);
         wpns.forEach(w => {
-          const fc = withWeapon(u, w, () => Core.forecast(u, tg, { distance: d, atkTerrain: tT, defTerrain: gT }));
+          const fc = withWeapon(u, w, () => Core.forecast(u, tg, { distance: d, atkTerrain: tT, defTerrain: gT, atkH: tH, defH: gH }));
           if (!fc.attacker.canAttack) return;
           const s = score(fc, tg, x, y);
           consider({ type: 'attack', target: tg.uid, x, y, weapon: w.id, slot: u.inventory ? u.inventory.indexOf(w) : -1, score: s.score, parts: s.parts });
@@ -266,7 +267,8 @@ Object.assign(Core, (() => {
   function lunge(S, u, data, wpns, foes, mov) {
     if (!wpns.length || !foes.length) return null;
     return approach(S, u, data, mov !== undefined ? mov : u.stats.mov,
-      ([x, y]) => foes.some(f => { const d = dist(x, y, f.x, f.y); return wpns.some(w => d >= w.minRange && d <= w.maxRange); }));
+      ([x, y]) => foes.some(f => { const d = dist(x, y, f.x, f.y), up = Core.heightAt(S, x, y) > Core.heightAt(S, f.x, f.y);
+        return wpns.some(w => d >= w.minRange && d <= w.maxRange + (up ? w.highGround | 0 : 0)); }));
   }
 
   // Chạy hành động của một kế hoạch (sau khi đã đặt u vào ô đứng). Dùng chung cho 36-play.js và tools/test_ai.js.
@@ -279,9 +281,10 @@ Object.assign(Core, (() => {
     if (!tg || tg.hp <= 0) return { ok: false, error: 'mục tiêu không còn' };
     if (a.type === 'attack') {
       const w = a.slot >= 0 && u.inventory ? u.inventory[a.slot] : u.weapon, d = dist(u.x, u.y, tg.x, tg.y);
-      if (!w || !withWeapon(u, w, () => Core.inRange(u, d))) return { ok: false, error: 'ngoài tầm' };
+      const uH = Core.heightAt(S, u.x, u.y), gH = Core.heightAt(S, tg.x, tg.y);
+      if (!w || !withWeapon(u, w, () => Core.inRange(u, d, Core.rangeBonus(u, uH, gH)))) return { ok: false, error: 'ngoài tầm' };
       u.weapon = w; if (u.inventory) { const i = u.inventory.indexOf(w); if (i > 0) { u.inventory.splice(i, 1); u.inventory.unshift(w); } }
-      const combat = Core.fight(u, tg, Object.assign({}, ctx, { distance: d, atkTerrain: Core.terrainOf(S, u.x, u.y, data), defTerrain: Core.terrainOf(S, tg.x, tg.y, data) }));
+      const combat = Core.fight(u, tg, Object.assign({}, ctx, { distance: d, atkTerrain: Core.terrainOf(S, u.x, u.y, data), defTerrain: Core.terrainOf(S, tg.x, tg.y, data), atkH: uH, defH: gH }));
       // EXP / lên cấp / hạng vũ khí (39-level): chỉ phe ta nhận (quân ta do AI điều khiển, hoặc quân ta phản đòn khi bị địch đánh).
       return { ok: true, combat, growth: Core.awardCombat(u, tg, combat, data, Core.growthRng(ctx)) };
     }

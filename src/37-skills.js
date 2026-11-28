@@ -3,7 +3,7 @@
 // Dữ liệu: data/skills.json. Đơn vị (makeUnit) có u.skills [id], u.res {tàiNguyên: còn}, u.resMax {tàiNguyên: tối đa}.
 // Kỹ năng thay cho hành động Đánh: phần chơi gọi Core.useSkill rồi đặt u.done = true như khi đánh.
 // Hiệu ứng: 'damage' và 'heal' (tuần 4) chạy thật (dùng Core.fight: công thức + khắc chế 36-combat, 1 đòn, không phản đòn).
-// Các loại còn lại (status, push, light, ignite, shield) chỉ ghi nhận vào kết quả (applied: false) — làm thật ở tuần 8.
+// Các loại còn lại (status, push, light, ignite, shield, refresh, buff, debuff) chỉ ghi nhận vào kết quả (applied: false) — làm thật ở tuần 8.
 Object.assign(Core, (() => {
   const FOES = { ta: ['dich'], dich: ['ta', 'npc'], npc: ['dich'] };   // giống 36-play.js
   const TARGETS = ['enemy', 'ally', 'tile'];
@@ -132,6 +132,9 @@ Object.assign(Core, (() => {
         if (!K.effects[e.type]) errs.push(`${p}: loại hiệu ứng lạ '${e.type}'`);
         if (e.type === 'heal' && k.target !== 'ally') errs.push(`${p}: heal cần target ally`);
         if (e.type === 'damage' && (k.target !== 'enemy' || !data.weapons || !data.weapons.types[e.dmgType])) errs.push(`${p}: damage cần target enemy và dmgType là loại vũ khí`);
+        if (e.type === 'status' && !Core.STATUS_IDS.includes(e.id)) errs.push(`${p}: trạng thái lạ '${e.id}'`);
+        if (e.chance !== undefined && !(e.chance >= 0 && e.chance <= 100)) errs.push(`${p}: chance phải là 0–100`);
+        if ((e.type === 'buff' || e.type === 'debuff') && !(['hit', 'avo', 'crit'].includes(e.stat) || Core.STAT_KEYS.includes(e.stat))) errs.push(`${p}: ${e.type} cần stat là chỉ số hoặc hit/avo/crit`);
       }
     }
     for (const t in data.units.templates) {

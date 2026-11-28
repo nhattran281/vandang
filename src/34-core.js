@@ -71,6 +71,8 @@ const Core = (() => {
     const r = it.range || [1, 1];
     const w = { id, name: it.name, type: it.type, rank: it.rank || 'E', magic: !!ty.magic, mt: it.mt | 0, hit: it.hit | 0, crit: it.crit | 0, wt: it.wt | 0, minRange: r[0], maxRange: r[1] != null ? r[1] : r[0] };
     w.effective = (ty.effective || []).map(k => Object.assign({ id: k }, W.effectiveness[k]));
+    if (ty.highGround) w.highGround = ty.highGround | 0;   // cung/nỏ: +tầm khi đứng cao hơn mục tiêu (GDD 3.2)
+    if (ty.natural) w.natural = true;                       // vũ khí bẩm sinh của quái
     if (it.uses) { w.uses = it.uses; w.maxUses = it.uses; }   // chỉ vũ khí mạnh có độ bền
     return w;
   }
@@ -156,6 +158,46 @@ const Core = (() => {
     return errs;
   }
 
+  // ---------- Mẫu đơn vị: nhãn, loại di chuyển, vũ khí theo class, cơ chế quái, look (chốt tuần 5) ----------
+  const TAGS = ['Nguoi', 'Ma', 'Yeu', 'Bay', 'Thuy'];                    // GDD 2.4
+  const STATUS_IDS = ['ngu', 'choang', 'me_hoac', 'bong', 'uot', 'troi'];  // GDD 2.7
+  // Rig mà 55-units.js vẽ được (giữ khớp với RIGS ở 55-units.js).
+  const LOOK_RIGS = ['foot', 'ogre', 'skel', 'golem', 'wraith', 'wolf', 'toad', 'wisp', 'spider', 'bat', 'rat', 'slime'];
+  function validateUnits(data) {
+    const errs = [], U = data.units, W = data.weapons || { items: {}, types: {} }, C = (data.classes || {}).classes || {};
+    const moveTypes = (data.terrain && data.terrain.moveTypes) || [], TT = U.traitTypes || {};
+    for (const t in U.templates) {
+      const tpl = U.templates[t], p = `mẫu ${t}`, cls = C[tpl.class];
+      for (const g of tpl.tags || []) if (!TAGS.includes(g)) fail(errs, `${p}: nhãn lạ '${g}' (${TAGS.join('/')})`);
+      if (!(tpl.tags || []).length) fail(errs, `${p}: thiếu tags`);
+      if (!moveTypes.includes(tpl.moveType || 'bo')) fail(errs, `${p}: moveType lạ '${tpl.moveType}'`);
+      if (cls) {
+        const ok = cls.weaponTypes || [];
+        for (const id of tpl.weapons || []) { const it = W.items[id]; if (it && !ok.includes(it.type)) fail(errs, `${p}: class ${tpl.class} không cầm được ${it.type} (${id})`); }
+        for (const r in tpl.ranks || {}) if (!ok.includes(r)) fail(errs, `${p}: hạng ${r} ngoài weaponTypes của class ${tpl.class}`);
+      }
+      for (const [i, tr] of (tpl.traits || []).entries()) {
+        const q = `${p} traits[${i}]`;
+        if (!TT[tr.type] || tr.type === '_doc') { fail(errs, `${q}: loại lạ '${tr.type}'`); continue; }
+        if (tr.type === 'tiep_suc') {
+          if (!U.templates[tr.to]) fail(errs, `${q}: to '${tr.to}' không phải mẫu đơn vị`);
+          if (!tr.stats || !Object.keys(tr.stats).length || Object.entries(tr.stats).some(([k, v]) => !STAT_KEYS.includes(k) || !Number.isInteger(v))) fail(errs, `${q}: stats phải là { chỉ số: số nguyên }`);
+        }
+        if (tr.type === 'gay_trang_thai') {
+          if (!STATUS_IDS.includes(tr.status)) fail(errs, `${q}: trạng thái lạ '${tr.status}'`);
+          if (!(Number.isInteger(tr.turns) && tr.turns > 0)) fail(errs, `${q}: turns phải là số nguyên > 0`);
+          if (tr.chance !== undefined && !(tr.chance >= 0 && tr.chance <= 100)) fail(errs, `${q}: chance phải là 0–100`);
+        }
+        if (tr.type === 'keo_nuoc' && tr.dist !== undefined && !(Number.isInteger(tr.dist) && tr.dist > 0)) fail(errs, `${q}: dist phải là số nguyên > 0`);
+      }
+      const look = tpl.look || {};
+      if (!LOOK_RIGS.includes(look.rig || 'foot')) fail(errs, `${p}: look.rig lạ '${look.rig}'`);
+      if (look.tint && !(Array.isArray(look.tint) && look.tint.length === 3 && look.tint.every(v => v >= 0 && v <= 2))) fail(errs, `${p}: look.tint phải là [r,g,b]`);
+    }
+    for (const k in TT) if (k !== '_doc' && TT[k].live !== false && TT[k].live !== true) fail(errs, `traitTypes.${k}: thiếu live`);
+    return errs;
+  }
+
   // Tạo một đơn vị từ mẫu. Chỉ số theo class (statsOf); hp hiện tại = hp tối đa. opts.lv ghi đè cấp (roster { tpl, lv }).
   function makeUnit(tplId, data, side, x, y, uid, opts) {
     const tpl = data.units.templates[tplId];
@@ -176,6 +218,7 @@ const Core = (() => {
     // AI (38-ai.js): hành vi gắn theo đơn vị; home = ô xuất phát (cho Giữ vị trí). moRuong: mở được rương (đạo tặc, Mèo).
     u.ai = Object.assign({}, tpl.ai); u.home = [x, y];
     if (tpl.moRuong) u.moRuong = true;
+    if (tpl.traits) u.traits = tpl.traits.map(x => Object.assign({}, x));   // cơ chế riêng của quái (tuần 8)
     return u;
   }
 
@@ -324,5 +367,10 @@ const Core = (() => {
     return { terrain, height, units };
   }
 
-  return { rng, validateMap, loadMap, makeUnit, validateClasses, statsOf, growthOf, classOf, maxLv, rankExp, makeWeapon, canWield, usable, equipFirst, validateWeapons, RANKS, inside, tile, terrainOf, moveCost, unitAt, chestAt, openChest, isExit, escape, toAscii, STAT_KEYS, heightRule, canStep, stepCost, reachable, pathTo, canStopAt };
+  // GDD 3.2: cung/nỏ đứng cao hơn mục tiêu → +highGround tầm tối đa. Độ cao không vào công thức sát thương/trúng.
+  // u.weapon là món đang tính; ah/bh = độ cao ô của bên đánh / bên bị đánh (thiếu thì không cộng).
+  const rangeBonus = (u, ah, bh) => (u && u.weapon && u.weapon.highGround && ah != null && bh != null && ah > bh) ? u.weapon.highGround : 0;
+  const heightAt = (S, x, y) => { const t = tile(S, x, y); return t ? t.h : 0; };
+
+  return { rangeBonus, heightAt, validateUnits, TAGS, STATUS_IDS, LOOK_RIGS, rng, validateMap, loadMap, makeUnit, validateClasses, statsOf, growthOf, classOf, maxLv, rankExp, makeWeapon, canWield, usable, equipFirst, validateWeapons, RANKS, inside, tile, terrainOf, moveCost, unitAt, chestAt, openChest, isExit, escape, toAscii, STAT_KEYS, heightRule, canStep, stepCost, reachable, pathTo, canStopAt };
 })();

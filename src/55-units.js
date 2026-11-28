@@ -1,7 +1,12 @@
 // ===== Vân Đăng · Vẽ đơn vị =====
-// Dựng nhân vật bằng rig người của Cinderwatch (50-rig). Màu, vũ khí, phụ kiện đọc từ "look" trong data/units.json.
-// Hình dáng hiện là tạm (người lính chung); dựng nhân vật riêng ở tuần 7.
+// Dựng nhân vật bằng bộ phận có sẵn của Cinderwatch (50-rig người, 51-bestiary quái). Rig, màu, vũ khí, phụ kiện
+// đọc từ "look" trong data/units.json (xem units.json → _look). Hình dáng hiện là tạm; dựng nhân vật riêng ở tuần 7.
 const UNITS = { views: [], torch: [] };
+// look.rig → hàm vẽ. Rig người dùng chung rigHuman với bộ phận theo kiểu (giữ khớp với Core.LOOK_RIGS ở 34-core.js).
+const HUMAN_RIGS = ['foot', 'ogre', 'skel', 'golem'];
+const BEAST_RIGS = { wraith: e => rigWraith(e), wolf: e => rigWolf(e), toad: e => rigToad(e), wisp: e => rigWisp(e), spider: e => rigSpider(e), bat: e => rigBat(e), rat: e => rigRat(e), slime: e => rigSlime(e) };
+// Cờ bộ phận/dáng của rig người lấy thẳng từ look.
+const LOOK_FLAGS = ['helm', 'plate', 'robe', 'hood', 'bow', 'drum', 'wraps', 'crown', 'keg', 'standard', 'shamble', 'claw', 'heavy'];
 
 function initUnitViews(S) {
   UNITS.views.length = 0;
@@ -21,7 +26,7 @@ function initUnitViews(S) {
 
 function drawUnits(S, t, P) {
   UNITS.torch.length = 0;
-  const I = KIT.item, bv = Play.battleView(P);
+  const I = KIT.item, bv = Play.battleView(P);   // I: vũ khí / khiên theo tên trong look
   for (const v of UNITS.views) {
     const u = v.u, look = v.look;
     // Trong lúc phát lại trận, quân đã về 0 HP vẫn đứng cho tới khi tới đoạn rút lui.
@@ -52,13 +57,17 @@ function drawUnits(S, t, P) {
     const breath = Math.sin(t * 1.8 + v.seed) * .04;
     const e = {
       x: v.x, y: v.y, z: v.z, yaw: v.yaw + Math.sin(t * .4 + v.seed) * .08, mv: a ? 1 : picked ? .25 : 0, ph: t * (a ? 9 : 4) + v.seed, atk, flinch, flash,
-      scale: (look.scale || 1) * 1.8, tint,
+      scale: (look.scale || 1) * 1.8, tint, lseed: v.seed,
       weapon: look.weapon ? I[look.weapon] : null, wScale: look.weapon === 'greatsword' ? .8 : 1,
-      shield: look.shield ? I[look.shield] : null, helm: !!look.helm, plate: !!look.plate, robe: !!look.robe, hood: !!look.hood,
+      shield: look.shield ? I[look.shield] : null,
       torch: !!(look.torch || look.lantern), stoop: breath,
     };
-    rigHuman(KIT.foot, SPEC.foot, e);
-    if (v.flame) {
+    for (const f of LOOK_FLAGS) e[f] = !!look[f];
+    if (look.staff) e.staff = true;
+    const rig = look.rig || 'foot';
+    if (BEAST_RIGS[rig]) { if (atk >= 0) e.flinch = -Math.sin(atk * PI) * .6; BEAST_RIGS[rig](e); }   // quái không có dáng vung: chồm tới thay cho đòn
+    else { const k = HUMAN_RIGS.includes(rig) ? rig : 'foot'; rigHuman(KIT[k], SPEC[k], e); }
+    if (v.flame && !BEAST_RIGS[rig]) {
       const q = RIGOUT.torch; v.flame.x = q.x; v.flame.y = q.y; v.flame.z = q.z; v.flame.on = 1;
       v.light.lx = q.x; v.light.ly = q.y + .3; v.light.lz = q.z; v.light.alive = true; UNITS.torch.push(v.light);
     }

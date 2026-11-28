@@ -4,7 +4,8 @@
 // weapon: tạo bằng Core.makeWeapon từ data/weapons.json:
 //   { id, name, type, rank, magic, mt, hit, crit, wt, minRange, maxRange, effective:[luật khắc chế], uses?, maxUses? }
 // Khắc chế (GDD 2.4) so w.effective với tags của mục tiêu (Nguoi/Ma/Yeu/Bay/Thuy) và statuses (vd 'uot').
-// ctx: { distance, atkTerrain, defTerrain, rng | seed, mode:'casual'|'classic'|'deadzone', noCounter, noDouble }
+// ctx: { distance, atkTerrain, defTerrain, atkH, defH, rng | seed, mode:'casual'|'classic'|'deadzone', noCounter, noDouble }
+//   atkH/defH: độ cao ô hai bên (Core.heightAt) — cung/nỏ đứng cao hơn được +1 tầm, cả khi phản đòn (GDD 3.2).
 //   noDouble: bên đánh chỉ ra 1 đòn (kỹ năng sát thương, 37-skills.js).
 //   atkTerrain/defTerrain: ô địa hình của terrain.json (dùng khóa avo, def) — lấy bằng Core.terrainOf.
 Object.assign(Core, (() => {
@@ -28,9 +29,10 @@ Object.assign(Core, (() => {
   }
 
   const attackSpeed = u => { const w = u.weapon; return u.stats.spd - Math.max(0, (w ? w.wt || 0 : 0) - u.stats.con); };
-  function inRange(u, d) {
+  // bonus: tầm cộng thêm (Core.rangeBonus: cung/nỏ đứng cao +1, GDD 3.2).
+  function inRange(u, d, bonus) {
     const w = u.weapon; if (!w || !Core.usable(u, w)) return false;   // chưa đủ hạng / đã gãy thì không đánh
-    const lo = w.minRange != null ? w.minRange : 1, hi = w.maxRange != null ? w.maxRange : lo;
+    const lo = w.minRange != null ? w.minRange : 1, hi = (w.maxRange != null ? w.maxRange : lo) + (bonus | 0);
     return d >= lo && d <= hi;
   }
 
@@ -71,8 +73,8 @@ Object.assign(Core, (() => {
     ctx = ctx || {};
     const distance = ctx.distance != null ? ctx.distance : 1;
     const a = side(att, def, ctx.atkTerrain, ctx.defTerrain), d = side(def, att, ctx.defTerrain, ctx.atkTerrain);
-    a.canAttack = inRange(att, distance);
-    d.canCounter = a.canAttack && !ctx.noCounter && def.hp > 0 && inRange(def, distance);
+    a.canAttack = inRange(att, distance, Core.rangeBonus(att, ctx.atkH, ctx.defH));
+    d.canCounter = a.canAttack && !ctx.noCounter && def.hp > 0 && inRange(def, distance, Core.rangeBonus(def, ctx.defH, ctx.atkH));
     if (ctx.noDouble) a.doubles = false;
     a.strikes = a.canAttack ? (a.doubles ? 2 : 1) : 0;
     d.strikes = d.canCounter ? (d.doubles ? 2 : 1) : 0;

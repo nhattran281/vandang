@@ -12,11 +12,14 @@
   "effects": {
     "_doc": "Loại hiệu ứng. live = chạy thật ngay; còn lại chỉ ghi nhận vào kết quả (applied: false), làm thật ở tuần 8. if: điều kiện (vs: nhãn mục tiêu, vsStatus: trạng thái mục tiêu, tileFlag: cờ địa hình ô đích, onHit: chỉ khi đòn sát thương trúng).",
     "damage": { "live": true,  "_doc": "Một đòn theo công thức 36-combat (Công = Phép/Sức + mt, trúng, chí mạng, khắc chế theo dmgType = loại vũ khí trong weapons.json). Không phản đòn, không đánh đôi." },
-    "status": { "live": false, "_doc": "Gây trạng thái id (GDD 2.7) trong turns lượt." },
+    "status": { "live": false, "_doc": "Gây trạng thái id (GDD 2.7) trong turns lượt. chance (0–100, tùy chọn): xác suất gây (1RN), thiếu = luôn gây." },
     "push":   { "live": false, "_doc": "Đẩy mục tiêu ra xa người dùng dist ô." },
     "light":  { "live": false, "_doc": "Nguồn sáng tại ô đích: xua sương bán kính radius trong turns lượt." },
     "ignite": { "live": false, "_doc": "Đốt ô đích trong turns lượt (chặn đường, gây Bỏng)." },
     "shield": { "live": false, "_doc": "Khiên hấp thụ amount sát thương trong turns lượt." },
+    "refresh": { "live": false, "_doc": "Hành động thêm (Hát Xẩm, GDD 7): mục tiêu đã đi xong được đi + hành động lại trong lượt này. Không dùng lên người cũng có refresh." },
+    "buff":   { "live": false, "_doc": "Cộng stat (khóa chỉ số GDD 2.2) thêm amount trong turns lượt cho mục tiêu; radius > 0 = mọi đồng minh trong bán kính quanh ô đích (gồm cả mục tiêu)." },
+    "debuff": { "live": false, "_doc": "Trừ vào chỉ số trận stat (hit = Trúng, avo = Né, hoặc khóa chỉ số) amount (số âm) trong turns lượt." },
     "heal":   { "live": true,  "_doc": "Hồi máu (chốt tuần 4, bản tối thiểu): hồi Phép + mt HP, không trượt, kẹp HP tối đa. Cần target ally." }
   },
   "skills": {
@@ -50,6 +53,27 @@
       "target": "ally", "range": [0, 1],
       "desc": "Bọc lửa đèn quanh mình hoặc đồng đội kề bên thành khiên.",
       "effects": [ { "type": "shield", "amount": 5, "turns": 1 } ]
+    },
+    "hat_xam": {
+      "name": "Hát Xẩm", "owner": "cuoi", "resource": "nhip_dan", "cost": 2,
+      "target": "ally", "range": [1, 1],
+      "desc": "Cất giọng xẩm: một đồng đội kề bên đã đi xong được hành động thêm một lần.",
+      "effects": [ { "type": "refresh" } ]
+    },
+    "noi_phet": {
+      "name": "Nói Phét", "owner": "cuoi", "resource": "nhip_dan", "cost": 1,
+      "target": "enemy", "range": [1, 3],
+      "desc": "Kể chuyện phét làm địch ngẩn người: −20 Trúng 1 lượt, có khi bị Mê hoặc nhẹ.",
+      "effects": [
+        { "type": "debuff", "stat": "hit", "amount": -20, "turns": 1 },
+        { "type": "status", "id": "me_hoac", "turns": 1, "chance": 25 }
+      ]
+    },
+    "ve_khich": {
+      "name": "Vè Khích", "owner": "cuoi", "resource": "nhip_dan", "cost": 1,
+      "target": "ally", "range": [0, 0],
+      "desc": "Đọc vè khích tướng: đồng minh trong bán kính 2 quanh Cuội +2 Sức 1 lượt.",
+      "effects": [ { "type": "buff", "stat": "str", "amount": 2, "turns": 1, "radius": 2 } ]
     },
     "chua": {
       "name": "Chữa", "owner": "vien_y", "resource": "linh_luc", "cost": 1,

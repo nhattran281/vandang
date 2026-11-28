@@ -107,14 +107,15 @@ const Play = (() => {
   // Tạm cầm w để gọi hàm của Core (Core đọc u.weapon), rồi trả lại món cũ.
   function withWeapon(u, w, fn) { const o = u.weapon; u.weapon = w; try { return fn(); } finally { u.weapon = o; } }
   // Các vũ khí của u với tới o từ ô đang đứng (Core.inRange đã loại vũ khí chưa đủ hạng / đã gãy).
-  const reachOf = (u, o) => usableWeapons(u).filter(w => withWeapon(u, w, () => Core.inRange(u, dist(u, o))));
+  // Cung/nỏ đứng cao hơn mục tiêu +1 tầm (GDD 3.2, Core.rangeBonus).
+  const reachOf = (S, u, o) => usableWeapons(u).filter(w => withWeapon(u, w, () => Core.inRange(u, dist(u, o), Core.rangeBonus(u, Core.heightAt(S, u.x, u.y), Core.heightAt(S, o.x, o.y)))));
   // Địch còn sống mà ít nhất một vũ khí trong túi của u với tới.
-  function targetsOf(S, u) { return S.units.filter(o => o.hp > 0 && hostile(u, o) && reachOf(u, o).length); }
+  function targetsOf(S, u) { return S.units.filter(o => o.hp > 0 && hostile(u, o) && reachOf(S, u, o).length); }
   const targets = P => P.unit ? targetsOf(P.S, P.unit) : [];
   // Ngữ cảnh cho Core.forecast / Core.fight: khoảng cách, ô địa hình hai bên, RNG có seed của trận, chế độ tử vong.
   function ctxOf(P, a, d) {
     const S = P.S, data = P.data;
-    return { distance: dist(a, d), atkTerrain: Core.terrainOf(S, a.x, a.y, data), defTerrain: Core.terrainOf(S, d.x, d.y, data), rng: P.rng, mode: S.mode || 'casual' };
+    return { distance: dist(a, d), atkTerrain: Core.terrainOf(S, a.x, a.y, data), defTerrain: Core.terrainOf(S, d.x, d.y, data), atkH: Core.heightAt(S, a.x, a.y), defH: Core.heightAt(S, d.x, d.y), rng: P.rng, mode: S.mode || 'casual' };
   }
   // Menu → Đánh: sang chọn mục tiêu (nếu có ai trong tầm).
   function attack(P) {
@@ -126,7 +127,7 @@ const Play = (() => {
   // Xem dự báo với mục tiêu d. Giữ món đang xem nếu còn với tới; không thì món đang cầm; không thì món đầu tiên với tới.
   // forecast không đổi trạng thái (vũ khí chỉ cầm tạm trong lúc tính).
   function aim(P, d) {
-    const u = P.unit, list = reachOf(u, d);
+    const u = P.unit, list = reachOf(P.S, u, d);
     P.foe = d; P.wpns = list;
     P.wpn = list.includes(P.wpn) ? P.wpn : list.includes(u.weapon) ? u.weapon : list[0];
     refresh(P);

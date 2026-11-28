@@ -6,26 +6,33 @@
 //   'cho'   chưa chọn quân nào
 //   'chon'  đã chọn quân ta, đang hiện vùng đi được (có thể kèm ô đích + đường đi)
 //   'di'    quân đang đi theo đường (bỏ qua chạm)
-//   'menu'  đã tới ô đích, chờ chọn hành động: Chờ / Hoàn tác (Đánh, Kỹ năng... thêm ở tuần 3)
+//   'menu'  đã tới ô đích, chờ chọn hành động: Đánh (nếu có địch trong tầm) / Chờ / Hoàn tác
+//   'muctieu' đang chọn mục tiêu; P.targets = địch trong tầm, P.foe + P.fc = mục tiêu đang xem và bảng dự báo (Core.forecast)
+//   'danh'  đang phát lại trận (P.battle: nhật ký Core.fight + đồng hồ phát lại; phần vẽ đọc qua battleView)
 // P.mode = 'may': lượt Địch / NPC đang tự chạy.
+// P.over: trận đã kết thúc (Đăng/Linh ngã → thua) — mọi thao tác bị khóa.
 // S.phase: 'ta' | 'dich' | 'npc'. Hết lượt NPC thì sang lượt ta mới (S.turn + 1).
 const Play = (() => {
   const STEP_TIME = .16;   // giây mỗi ô khi đi (nhịp hiển thị; logic chốt ngay khi ra lệnh)
   const BANNER_TIME = 1.1; // băng chữ đầu mỗi phe
   const GAP_TIME = .18;    // nghỉ giữa hai quân máy
   const ORDER = ['ta', 'dich', 'npc'], NAME = { ta: 'Phe ta', dich: 'Phe địch', npc: 'NPC' };
+  // Nhịp phát lại trận (giây). Mỗi đòn: vung → trúng ở IMPACT → HP tụt trong DRAIN → nghỉ tới hết STRIKE.
+  const STRIKE_TIME = .9, IMPACT = .28, DRAIN = .35, POPUP = .85, KO_TIME = .8, END_TIME = .45;
+  const FOES = { ta: ['dich'], dich: ['ta', 'npc'], npc: ['dich'] };   // ai đánh được ai
 
-  function create(S, data) {
-    const P = { S, data, mode: 'cho', unit: null, R: null, target: null, path: null, anim: null, undo: null, banner: null, queue: [], gap: 0, ver: 0 };
+  function create(S, data, seed) {
+    const P = { S, data, mode: 'cho', unit: null, R: null, target: null, path: null, anim: null, undo: null, banner: null, queue: [], gap: 0, ver: 0,
+      rng: Core.rng(seed != null ? seed : 1), targets: [], foe: null, fc: null, battle: null, lastFight: null, over: null };
     P.banner = { text: `Lượt ${S.turn} · ${NAME.ta}`, side: 'ta', t: 0, dur: BANNER_TIME };
     return P;
   }
 
   // Quân có nhận lệnh được không: quân ta, còn sống, chưa đi, đang lượt ta.
   const ready = (P, u) => !!(u && u.side === 'ta' && u.hp > 0 && !u.done && P.S.phase === 'ta');
-  const busy = P => !!(P.banner || P.anim || P.mode === 'may');
+  const busy = P => !!(P.over || P.banner || P.anim || P.battle || P.mode === 'may');
 
-  function clearSel(P) { P.mode = 'cho'; P.unit = null; P.R = null; P.target = null; P.path = null; P.undo = null; P.ver++; }
+  function clearSel(P) { P.mode = 'cho'; P.unit = null; P.R = null; P.target = null; P.path = null; P.undo = null; P.targets = []; P.foe = null; P.fc = null; P.ver++; }
   function select(P, u) { P.mode = 'chon'; P.unit = u; P.R = Core.reachable(P.S, u, P.data); P.target = null; P.path = null; P.ver++; }
   function cancel(P) { if (P.mode === 'chon') clearSel(P); }
 
@@ -43,9 +50,18 @@ const Play = (() => {
 
   // Xử lý một lần chạm vào ô (x,y); (x,y) = null nghĩa là chạm ra ngoài bàn cờ.
   // Trả về: 'chon' · 'dich' (đặt ô đích) · 'di' (ra lệnh đi) · 'quaduoc' (ô chỉ đi qua) · 'huy' · 'xem' · 'ban' (đang bận / đang ở menu)
+  //   Khi chọn mục tiêu: 'dubao' (hiện bảng dự báo) · 'danh' (chạm lại mục tiêu đang xem = xác nhận) · 'bodubao' · 'menu' (quay lại menu)
   function tap(P, x, y) {
     if (busy(P) || P.mode === 'menu' || P.S.phase !== 'ta') return 'ban';
     const S = P.S, onMap = x !== null && x !== undefined && Core.inside(S, x, y), u = onMap ? Core.unitAt(S, x, y) : null;
+    if (P.mode === 'muctieu') {
+      if (u && P.targets.includes(u)) {
+        if (P.foe === u) { confirm(P); return 'danh'; }
+        aim(P, u); return 'dubao';
+      }
+      if (P.foe) { P.foe = null; P.fc = null; P.ver++; return 'bodubao'; }
+      back(P); return 'menu';
+    }
     if (P.mode === 'chon') {
       if (!onMap) { cancel(P); return 'huy'; }
       if (u && u !== P.unit && ready(P, u)) { select(P, u); return 'chon'; }
@@ -74,6 +90,69 @@ const Play = (() => {
     const { u, x, y } = P.undo; u.x = x; u.y = y; P.undo = null; select(P, u);
     return true;
   }
+
+  // ----- Đánh (tuần 3) -----
+  const dist = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  const hostile = (a, b) => (FOES[a.side] || []).includes(b.side);
+  // Địch còn sống mà vũ khí đang cầm của u với tới từ ô đang đứng (Core.inRange đã loại vũ khí chưa đủ hạng / đã gãy).
+  function targetsOf(S, u) { return S.units.filter(o => o.hp > 0 && hostile(u, o) && Core.inRange(u, dist(u, o))); }
+  const targets = P => P.unit ? targetsOf(P.S, P.unit) : [];
+  // Ngữ cảnh cho Core.forecast / Core.fight: khoảng cách, ô địa hình hai bên, RNG có seed của trận, chế độ tử vong.
+  function ctxOf(P, a, d) {
+    const S = P.S, data = P.data;
+    return { distance: dist(a, d), atkTerrain: Core.terrainOf(S, a.x, a.y, data), defTerrain: Core.terrainOf(S, d.x, d.y, data), rng: P.rng, mode: S.mode || 'casual' };
+  }
+  // Menu → Đánh: sang chọn mục tiêu (nếu có ai trong tầm).
+  function attack(P) {
+    if (P.mode !== 'menu') return false;
+    const list = targets(P); if (!list.length) return false;
+    P.mode = 'muctieu'; P.targets = list; P.foe = null; P.fc = null; P.ver++;
+    return true;
+  }
+  // Xem dự báo với mục tiêu d. forecast không đổi trạng thái.
+  function aim(P, d) { P.foe = d; P.fc = Core.forecast(P.unit, d, ctxOf(P, P.unit, d)); P.ver++; }
+  // Quay lại menu hành động (vẫn ở ô vừa đi tới, vẫn Hoàn tác được).
+  function back(P) {
+    if (P.mode !== 'muctieu') return false;
+    P.mode = 'menu'; P.targets = []; P.foe = null; P.fc = null; P.ver++;
+    return true;
+  }
+  // Xác nhận: chạy Core.fight (ghi HP ngay), rồi phát lại nhật ký. Sau khi đánh thì không Hoàn tác được nữa.
+  function confirm(P) {
+    if (P.mode !== 'muctieu' || !P.foe) return false;
+    const a = P.unit, d = P.foe, hp0 = { [a.uid]: a.hp, [d.uid]: d.hp };
+    const res = Core.fight(a, d, ctxOf(P, a, d));
+    a.done = true; P.undo = null;
+    P.battle = { a, d, res, hp0, t: 0, dur: res.strikes.length * STRIKE_TIME + (res.outcome ? KO_TIME : 0) + END_TIME };
+    P.mode = 'danh'; P.targets = []; P.ver++;
+    return true;
+  }
+  function endBattle(P) {
+    const b = P.battle; P.battle = null; P.lastFight = b.res; clearSel(P);
+    const o = b.res.outcome;
+    if (o && o.gameOver) { P.over = { text: 'Thua trận', side: 'dich', reason: (o.uid === b.a.uid ? b.a : b.d).name + ' đã ngã' }; P.ver++; return; }
+    if (!left(P)) endTurn(P);
+  }
+  // Ảnh chụp phát lại tại thời điểm hiện tại, cho phần vẽ: HP đang hiện, đòn đang chạy, số bay lên, quân đang rút lui.
+  function battleView(P) {
+    const b = P.battle; if (!b) return null;
+    const hp = Object.assign({}, b.hp0), pops = [], st = b.res.strikes;
+    let cur = null;
+    st.forEach((s, j) => {
+      const t0 = j * STRIKE_TIME, k = b.t - t0;
+      if (k >= 0 && k < STRIKE_TIME) cur = { i: j, s, k, atk: Math.min(1, k / (IMPACT / .45)), impact: k >= IMPACT };
+      if (k >= IMPACT) {
+        const prev = j ? hpAfter(st, j - 1, s.to, b.hp0) : b.hp0[s.to];
+        hp[s.to] = Math.round(prev + (s.targetHp - prev) * Math.min(1, (k - IMPACT) / DRAIN));
+        if (k < IMPACT + POPUP) pops.push({ uid: s.to, hit: s.hit, crit: s.crit, damage: s.damage, broke: s.broke, from: s.from, age: (k - IMPACT) / POPUP });
+      }
+    });
+    const tKO = st.length * STRIKE_TIME, o = b.res.outcome;
+    const ko = o && b.t >= tKO ? { uid: o.uid, result: o.result, k: Math.min(1, (b.t - tKO) / KO_TIME) } : null;
+    return { a: b.a, d: b.d, fc: b.res.forecast, hp, cur, pops, ko, t: b.t, dur: b.dur };
+  }
+  // HP của uid sau đòn thứ j (đọc ngược nhật ký).
+  function hpAfter(st, j, uid, hp0) { for (let i = j; i >= 0; i--) if (st[i].to === uid) return st[i].targetHp; return hp0[uid]; }
 
   // ----- Vòng lượt -----
   function endTurn(P) {
@@ -110,6 +189,8 @@ const Play = (() => {
   }
 
   function update(P, dt) {
+    if (P.over) return;
+    if (P.battle) { P.battle.t += dt; if (P.battle.t >= P.battle.dur) endBattle(P); return; }
     if (P.banner) { P.banner.t += dt; if (P.banner.t >= P.banner.dur) { P.banner = null; P.ver++; } return; }
     const a = P.anim;
     if (a) {
@@ -139,5 +220,5 @@ const Play = (() => {
 
   const left = P => P.S.units.filter(u => ready(P, u)).length;
 
-  return { create, ready, busy, select, cancel, tap, wait, undo, endTurn, update, animPos, left, planMove, STEP_TIME };
+  return { create, ready, busy, select, cancel, tap, wait, undo, endTurn, update, animPos, left, planMove, targets, targetsOf, attack, aim, back, confirm, battleView, STEP_TIME, STRIKE_TIME, IMPACT };
 })();

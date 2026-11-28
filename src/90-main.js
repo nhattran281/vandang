@@ -70,7 +70,9 @@ function tapTile(p) {
   const P = G.play, ev = G.last = Play.tap(P, p ? p.x : null, p ? p.y : null);
   if (ev === 'chon') selectTile({ x: P.unit.x, y: P.unit.y });
   else if (ev === 'dich' || ev === 'xem' || ev === 'quaduoc' || ev === 'di') selectTile(p);
-  else if (ev === 'huy') G.sel = null;
+  else if (ev === 'huy' || ev === 'danh') G.sel = null;
+  else if (ev === 'dubao') selectTile(p);
+  else if (ev === 'menu') selectTile({ x: P.unit.x, y: P.unit.y });
   return ev;
 }
 // Nút HUD: Chờ / Hoàn tác / Hết lượt
@@ -79,6 +81,9 @@ function hudAction(act) {
   if (act === 'cho') { ok = Play.wait(P); if (ok) G.sel = null; }
   else if (act === 'hoantac') { ok = Play.undo(P); if (ok) selectTile({ x: P.unit.x, y: P.unit.y }); }
   else if (act === 'hetluot') { ok = Play.endTurn(P); if (ok) G.sel = null; }
+  else if (act === 'danh') ok = Play.attack(P);
+  else if (act === 'quaylai') { ok = Play.back(P); if (ok) selectTile({ x: P.unit.x, y: P.unit.y }); }
+  else if (act === 'xacnhan') { ok = Play.confirm(P); if (ok) G.sel = null; }
   G.last = act; return ok;
 }
 
@@ -100,7 +105,8 @@ function initInput() {
   window.addEventListener('keydown', e => {
     const s = G.sel; let m = null;
     const P = G.play;
-    if (P.mode === 'menu') { if (e.key === 'Enter' || e.key === ' ') hudAction('cho'); else if (e.key === 'Escape' || e.key === 'Backspace') hudAction('hoantac'); return; }
+    if (P.mode === 'menu') { if (e.key === 'Enter' || e.key === ' ') hudAction('cho'); else if (e.key === 'Escape' || e.key === 'Backspace') hudAction('hoantac'); else if (e.key === 'x' || e.key === 'X') hudAction('danh'); return; }
+    if (P.mode === 'muctieu') { if (e.key === 'Escape' || e.key === 'Backspace') hudAction('quaylai'); else if (P.fc && (e.key === 'Enter' || e.key === ' ')) hudAction('xacnhan'); else if (e.key === 'Tab') { e.preventDefault(); const l = P.targets, i = (l.indexOf(P.foe) + 1) % l.length; Play.aim(P, l[i]); selectTile(l[i]); } return; }
     if (e.key === 'Escape') { Play.cancel(P); G.sel = null; }
     else if (e.key === 'e' || e.key === 'E') hudAction('hetluot');
     else if (e.key === 'Enter' || e.key === ' ') tapTile(s);
@@ -160,7 +166,7 @@ function boot() {
   if (HASH.biome) S.biome = HASH.biome;
   const B = G.B = buildGridBoard(S, +(HASH.seed || 1));
   R.scene.add(B.group); activateGridBoard(B);
-  G.play = Play.create(S, DATA);
+  G.play = Play.create(S, DATA, +(HASH.seed || 1));
   initUnitViews(S); initOverlay(); G.cursor = makeTileCursor(); initInput();
   window.addEventListener('resize', resizeRenderer);
   window.addEventListener('orientationchange', () => setTimeout(resizeRenderer, 120));

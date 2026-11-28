@@ -2,8 +2,10 @@
 // Chỉ đọc trạng thái Play (36-play); dựng lại hình khi P.ver đổi.
 // Màu:  ô dừng được = xanh lam đèn · ô chỉ đi qua (có quân ta / có rương khi quân bay) = tím nhạt
 //       đường đi = vàng đèn lồng, ô đích sáng hơn.
+//       chọn mục tiêu: tầm đánh = đỏ nhạt · địch trong tầm = đỏ · mục tiêu đang xem dự báo = đỏ sáng
 const OVL = {
-  COL: { stop: [.24, .55, 1, .42], pass: [.66, .5, .9, .34], dest: [.45, .75, 1, .62], path: [1, .82, .45, .95] },
+  COL: { stop: [.24, .55, 1, .42], pass: [.66, .5, .9, .34], dest: [.45, .75, 1, .62], path: [1, .82, .45, .95],
+    reach: [1, .3, .2, .2], foe: [1, .28, .18, .55], aim: [1, .45, .3, .85] },
   mesh: null, ver: -1,
 };
 
@@ -19,6 +21,15 @@ function ovlY(S, x, y) { const t = Core.tile(S, x, y); return (t && '~WB'.includ
 function buildOverlay(P) {
   const S = P.S, pos = [], col = [];
   const quad = (a, b, c, d, rgba) => { for (const p of [a, b, c, a, c, d]) { pos.push(p[0], p[1], p[2]); col.push(rgba[0], rgba[1], rgba[2], rgba[3]); } };
+  const sq = (x, y, c, k) => { const w = tileWorld(S, x, y), yy = ovlY(S, x, y), h = TS / 2 * (k || .9); quad([w.x - h, yy, w.z - h], [w.x - h, yy, w.z + h], [w.x + h, yy, w.z + h], [w.x + h, yy, w.z - h], c); };
+  if (P.mode === 'muctieu' && P.unit) {
+    const u = P.unit, wp = u.weapon, lo = wp ? wp.minRange : 1, hi = wp ? wp.maxRange : 0;
+    for (let y = 0; y < S.h; y++) for (let x = 0; x < S.w; x++) {
+      const d = Math.abs(x - u.x) + Math.abs(y - u.y); if (d < lo || d > hi) continue;
+      const o = Core.unitAt(S, x, y), foe = o && P.targets.includes(o);
+      sq(x, y, foe ? (o === P.foe ? OVL.COL.aim : OVL.COL.foe) : OVL.COL.reach);
+    }
+  }
   const R0 = P.mode === 'chon' ? P.R : null;
   if (R0) {
     const stops = new Set(R0.stops), h = TS / 2 * .9;

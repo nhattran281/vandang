@@ -6,13 +6,14 @@ Nền kỹ thuật fork từ [Cinderwatch](https://github.com/kevintngo/cinderwa
 
 ![Map thử trên điện thoại](media/tuan1-dien-thoai.jpg)
 
-## Trạng thái: Tuần 1 (khung chạy được)
+## Trạng thái: Tuần 3 (đánh được)
 
 - Đã gỡ logic tower defense (`60-towers`, `61-monsters`, `62-game`).
 - Dữ liệu dạng JSON trong `data/`, được nhúng vào bản build.
 - Logic lõi `src/34-core.js` tách khỏi phần vẽ, có test chạy bằng Node.
 - Map thử 12×16 hiển thị bằng đồ họa Cinderwatch: địa hình, độ cao, tháp đèn, miếu, cầu, quân ta/địch/NPC, rương. Chạm/nhấn một ô để xem thông số.
 - Tuần 2: tìm đường (`Core.reachable/pathTo/canStopAt`); chạm quân ta để tô vùng đi, chạm ô đích để xem đường, chạm lần nữa để đi; chạm ngoài vùng để hủy. Đi xong chọn **Chờ** hoặc **Hoàn tác**; nút **Hết lượt**; vòng lượt Ta → Địch → NPC (máy tạm thời chỉ tiến về quân ta gần nhất). Bàn phím: mũi tên + Enter, Esc hủy/hoàn tác, E hết lượt.
+- Tuần 3: công thức chiến đấu `src/36-combat.js` (`Core.forecast`, `Core.fight`; 2RN, khắc chế, độ bền, hạng vũ khí). Đi xong, nếu có địch trong tầm vũ khí đang cầm thì menu có **Đánh** → ô đỏ là tầm đánh, chạm một địch để xem **bảng dự báo** (2 cột ta/địch: vũ khí, HP, ST ×2 khi đánh đôi, Trúng, Chí mạng, Độ bền nếu có; khắc chế ghi tên luật màu cam; bên không phản đòn được hiện "–"). Chạm lại mục tiêu hoặc nút **Đánh** để xác nhận → phát lại nhật ký đòn (số bay lên, HP tụt dần, Trượt / Chí mạng), quân về 0 HP rút lui (Casual). Đăng/Linh ngã → Thua trận. Bàn phím: X = Đánh, Tab = đổi mục tiêu, Enter = xác nhận, Esc = quay lại.
 
 ## Chạy, build, test
 
@@ -42,15 +43,16 @@ CHROME=/usr/bin/google-chrome node tools/cdp.js "" 390,844 "tapat:__vd.screenOfT
 | `src/11-shared.js` | Phần dùng chung tách từ Cinderwatch: vật liệu, `Soup.seg`, `clothPanel`, thư viện đồ vật `PROP` |
 | `src/34-core.js` | **Logic lõi** (thuần dữ liệu): đọc/kiểm tra map, tạo đơn vị, tra ô, chi phí di chuyển, RNG có seed |
 | `src/35-board.js` | Vẽ bàn cờ ô vuông từ trạng thái map |
-| `src/36-play.js` | **Điều khiển lượt** (thuần dữ liệu): chọn quân → ô đích → đi → Chờ/Hoàn tác, `done`; vòng lượt Ta → Địch → NPC, nước đi tạm cho quân máy |
-| `src/56-overlay.js` | Tô vùng đi được (xanh = dừng được, tím = chỉ đi qua) và vẽ đường đi |
+| `src/36-combat.js` | **Công thức chiến đấu** (thuần dữ liệu): `Core.forecast` (không đổi trạng thái), `Core.fight` (ghi HP, trả nhật ký đòn) |
+| `src/36-play.js` | **Điều khiển lượt** (thuần dữ liệu): chọn quân → ô đích → đi → Đánh/Chờ/Hoàn tác, chọn mục tiêu → dự báo → xác nhận → phát lại (`battleView`); vòng lượt Ta → Địch → NPC, nước đi tạm cho quân máy |
+| `src/56-overlay.js` | Tô vùng đi được (xanh = dừng được, tím = chỉ đi qua), vẽ đường đi; tô tầm đánh và mục tiêu (đỏ) |
 | `src/55-units.js` | Vẽ đơn vị bằng rig người của Cinderwatch (tạm) |
-| `src/72-hud.js` | HUD tạm (font hệ thống, có dấu tiếng Việt) |
+| `src/72-hud.js` | HUD (font hệ thống, có dấu tiếng Việt; số sát thương dùng `70-pixelfont`): menu, bảng dự báo, bảng phát lại trận |
 | `src/90-main.js` | Camera (giữ từ Cinderwatch), nhập liệu, vòng lặp, khởi động |
 | `legacy/` | File Cinderwatch không build nữa, giữ để tham khảo (đường đi, địa hình cong, đồ vật, UI cũ) |
 | `tools/` | `build.py`, `test_core.js`, `cdp.js`, `record.js` |
 
-Quy ước: các file `src/*.js` được nối theo thứ tự tên vào một hàm; `34-core.js` và `36-play.js` không được dùng THREE/DOM để còn chạy trong Node.
+Quy ước: các file `src/*.js` được nối theo thứ tự tên vào một hàm; `34-core.js`, `36-combat.js` và `36-play.js` không được dùng THREE/DOM để còn chạy trong Node.
 
 ## Định dạng map (`data/maps/<id>.json`)
 

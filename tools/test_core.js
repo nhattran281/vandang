@@ -5,7 +5,7 @@ const rd = p => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const DATA = { terrain: rd('data/terrain.json'), units: rd('data/units.json'), weapons: rd('data/weapons.json'), maps: {} };
 for (const f of fs.readdirSync(path.join(ROOT, 'data/maps'))) if (f.endsWith('.json')) { const m = rd('data/maps/' + f); DATA.maps[m.id] = m; }
 const src = f => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8');
-const { Core, Play } = vm.runInNewContext(src('34-core.js') + '\n' + src('36-play.js') + '\n({ Core, Play })', {});
+const { Core, Play } = vm.runInNewContext(src('34-core.js') + '\n' + src('36-combat.js') + '\n' + src('36-play.js') + '\n({ Core, Play })', {});
 const eq = (a, b) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b)); // mảng từ vm khác realm nên so qua JSON
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok', name); };
 
@@ -156,5 +156,51 @@ t('map thử: một vòng lượt chạy hết, địch không đứng chồng',
   assert.strictEqual(M.phase, 'ta'); assert.strictEqual(M.turn, 2);
   const pos = M.units.map(u => u.x + ',' + u.y); assert.strictEqual(new Set(pos).size, pos.length);
   assert.ok(M.units.filter(u => u.side === 'dich').some(u => u.y > 3));        // có địch đã tiến xuống
+});
+// ----- Đánh: menu → chọn mục tiêu → dự báo → xác nhận → phát lại (tuần 3) -----
+const toMenu = (P, x, y) => { Play.tap(P, x, y); Play.tap(P, x, y); Play.tap(P, x, y); Play.update(P, 1); assert.strictEqual(P.mode, 'menu'); };
+t('Đánh chỉ có khi địch trong tầm vũ khí đang cầm; NPC không phải mục tiêu', () => {
+  const M = mk(['......']); const me = put(M, 0, 0, { mov: 0 }); put(M, 2, 0, { side: 'npc' }); const foe = put(M, 3, 0, { side: 'dich' }); const P = mkP(M);
+  toMenu(P, 0, 0); eq(Play.targets(P).length, 0); assert.ok(!Play.attack(P));               // kiếm tầm 1, địch cách 3
+  foe.x = 1; eq(Play.targets(P).map(u => u.uid), [foe.uid]); assert.ok(Play.attack(P)); assert.strictEqual(P.mode, 'muctieu');
+  me.inventory = [Core.makeWeapon('lua_den', DATA)]; Core.equipFirst(me); foe.x = 2;            // lửa đèn tầm 1–2
+  assert.ok(Play.back(P)); assert.ok(Play.attack(P)); eq(P.targets.map(u => u.uid), [foe.uid]);
+});
+t('chạm mục tiêu: hiện dự báo (không đổi HP); chạm ô khác bỏ dự báo, chạm lần nữa về menu', () => {
+  const M = mk(['F....']); const me = put(M, 0, 0, { mov: 0 }); const foe = put(M, 1, 0, { side: 'dich' }); const P = mkP(M);
+  toMenu(P, 0, 0); Play.attack(P);
+  assert.strictEqual(Play.tap(P, 1, 0), 'dubao'); assert.strictEqual(P.foe, foe);
+  const ref = Core.forecast(me, foe, { distance: 1, atkTerrain: Core.terrainOf(M, 0, 0, DATA), defTerrain: Core.terrainOf(M, 1, 0, DATA) });
+  eq(P.fc, ref); assert.strictEqual(foe.hp, foe.stats.hp); assert.strictEqual(me.hp, me.stats.hp);
+  assert.strictEqual(Play.tap(P, 4, 0), 'bodubao'); assert.strictEqual(P.fc, null);
+  assert.strictEqual(Play.tap(P, 4, 0), 'menu'); assert.strictEqual(P.mode, 'menu'); assert.ok(Play.undo(P));  // chưa đánh thì vẫn Hoàn tác được
+});
+t('xác nhận: Core.fight ghi HP, quân thành done, phát lại xong thì về chờ, không Hoàn tác', () => {
+  const M = mk(['.....']); const me = put(M, 0, 0, { mov: 0 }); const foe = put(M, 1, 0, { side: 'dich' }); put(M, 4, 0); const P = mkP(M);
+  toMenu(P, 0, 0); Play.attack(P); Play.tap(P, 1, 0);
+  assert.strictEqual(Play.tap(P, 1, 0), 'danh'); assert.strictEqual(P.mode, 'danh'); assert.ok(me.done); assert.ok(Play.busy(P));
+  const log = P.battle.res.strikes; assert.ok(log.length >= 2);                            // đòn ta + phản đòn
+  assert.strictEqual(foe.hp, [...log].reverse().find(s => s.to === foe.uid).targetHp);       // HP đã ghi ngay
+  let v = Play.battleView(P); assert.strictEqual(v.hp[foe.uid], foe.stats.hp);             // nhưng hiển thị chưa tụt
+  Play.update(P, Play.IMPACT + 1); v = Play.battleView(P); assert.strictEqual(v.hp[foe.uid], log[0].targetHp);
+  assert.strictEqual(Play.tap(P, 0, 0), 'ban'); assert.ok(!Play.undo(P));
+  run(P, 10); assert.strictEqual(P.mode, 'cho'); assert.strictEqual(P.battle, null); assert.ok(P.lastFight);
+});
+t('hạ địch: về 0 HP thì rút lui (Casual), biến khỏi bàn cờ; cùng seed → cùng nhật ký', () => {
+  const play = seed => {
+    const M = mk(['....']); put(M, 0, 0, { mov: 0 }); const foe = put(M, 1, 0, { side: 'dich' }); foe.hp = 1; put(M, 3, 0);
+    const P = Play.create(M, DATA, seed); Play.update(P, 5); toMenu(P, 0, 0); Play.attack(P); Play.tap(P, 1, 0); Play.tap(P, 1, 0);
+    return { M, P, foe };
+  };
+  let r; for (let s = 1; s < 50 && !(r && r.foe.hp === 0); s++) r = play(s);                // tìm seed trúng ngay đòn đầu
+  assert.strictEqual(r.foe.hp, 0); assert.ok(r.foe.retreated); assert.strictEqual(Core.unitAt(r.M, 1, 0), null);
+  run(r.P, 1); assert.ok(Play.battleView(r.P).ko); run(r.P, 10); assert.strictEqual(r.P.mode, 'cho');
+  const a = play(7), b = play(7); eq(a.P.battle.res.strikes, b.P.battle.res.strikes);
+});
+t('Đăng ngã khi phản đòn → thua trận, khóa thao tác', () => {
+  const M = mk(['...']); const me = put(M, 0, 0, { mov: 0 }); me.hp = 1; me.stats.lck = 0; me.stats.spd = 0;
+  const foe = put(M, 1, 0, { side: 'dich' }); foe.stats.hp = foe.hp = 99; foe.stats.def = 30; foe.stats.skl = 30; const P = mkP(M);
+  toMenu(P, 0, 0); Play.attack(P); Play.tap(P, 1, 0); Play.tap(P, 1, 0); run(P, 10);
+  assert.strictEqual(me.hp, 0); assert.ok(P.over); assert.strictEqual(P.over.text, 'Thua trận'); assert.strictEqual(Play.tap(P, 1, 0), 'ban'); assert.ok(!Play.endTurn(P));
 });
 console.log(n + ' bài kiểm thử đạt');

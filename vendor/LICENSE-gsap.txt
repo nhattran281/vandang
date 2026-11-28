@@ -1,0 +1,22 @@
+GSAP 3.15.1 core (vendor/gsap.min.js, also inlined into index.html)
+Source: https://github.com/greensock/GSAP (tag 3.15.1, file dist/gsap.min.js, unmodified)
+
+Copyright (c) 2008-2026, GreenSock. All rights reserved.
+GSAP is owned by Webflow, Inc.
+
+GSAP is NOT under the MIT license. It is distributed under GreenSock's
+Standard "No Charge" License: https://gsap.com/standard-license
+
+Summary as read on 2026-11-28 (the license text at the URL above is authoritative):
+- Free of charge, including commercial use, on websites, web apps and other
+  digital interfaces. A browser game such as Vân Đăng is a permitted use.
+- Prohibited: using GSAP in a no-code visual animation builder that competes
+  with Webflow's visual animation tools (without prior written consent), or
+  reverse engineering GSAP to build such a product.
+- Do not remove or alter GreenSock's proprietary notices or branding: the
+  /*! ... @license ... */ header at the top of gsap.min.js must stay intact
+  (tools/build.py inlines the file as-is).
+- Webflow may update the license; versions already obtained may keep being
+  used under the terms that applied when they were obtained.
+
+Only the core file is used (gsap.min.js = core + CSSPlugin). No bonus plugins.

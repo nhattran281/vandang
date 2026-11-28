@@ -27,6 +27,15 @@ def three_classic():
     return out
 
 
+def gsap():
+    """GSAP lõi (vendor/gsap.min.js) chèn nguyên văn, giữ dòng bản quyền /*! ... */ ở đầu (giấy phép: vendor/LICENSE-gsap.txt).
+    Bản UMD gắn window.gsap; phần hoạt ảnh (src/54-anim.js) dùng biến toàn cục gsap."""
+    src = open(os.path.join(ROOT, 'vendor', 'gsap.min.js'), encoding='utf-8').read()
+    assert src.startswith('/*!') and 'GreenSock' in src[:400], 'thiếu dòng bản quyền GSAP'
+    assert '</script' not in src
+    return src
+
+
 def data():
     """Gom data/*.json và data/maps/*.json thành một hằng DATA nhúng vào bản build."""
     d = {'maps': {}}
@@ -51,7 +60,7 @@ def game():
 
 def main():
     shell = open(os.path.join(ROOT, 'src', 'shell.html'), encoding='utf-8').read()
-    html = shell.replace('/*__THREE__*/', three_classic()).replace('/*__GAME__*/', game())
+    html = shell.replace('/*__THREE__*/', three_classic()).replace('/*__GSAP__*/', gsap()).replace('/*__GAME__*/', game())
     outs = [os.path.join(ROOT, 'index.html')] + sys.argv[1:]
     for out in outs:
         with open(out, 'w', encoding='utf-8') as f:

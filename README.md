@@ -26,7 +26,7 @@ Nền kỹ thuật fork từ [Cinderwatch](https://github.com/kevintngo/cinderwa
 ## Chạy, build, test
 
 ```bash
-python3 tools/build.py      # nối data/*.json + src/*.js + three.js -> index.html
+python3 tools/build.py      # nối data/*.json + src/*.js + three.js + GSAP -> index.html
 node tools/test_core.js     # test logic lõi, không cần trình duyệt
 node tools/test_combat.js   # test công thức chiến đấu (2RN, dự báo, trận đấu)
 node tools/test_skills.js   # test khung kỹ năng (mục tiêu, tài nguyên, sát thương kỹ năng)
@@ -100,3 +100,4 @@ Quy ước: các file `src/*.js` được nối theo thứ tự tên vào một 
 
 - Cinderwatch © Kevin Ngo, MIT ([LICENSE](LICENSE)).
 - three.js, MIT ([notice](vendor/LICENSE-three.txt)).
+- GSAP 3.15.1 (lõi), © GreenSock, thuộc Webflow; **không phải MIT**: giấy phép "Standard No Charge" (miễn phí, kể cả thương mại; cấm dùng làm công cụ dựng hoạt ảnh trực quan cạnh tranh Webflow; giữ nguyên dòng bản quyền) ([ghi chú](vendor/LICENSE-gsap.txt), [giấy phép](https://gsap.com/standard-license)).

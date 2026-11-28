@@ -1,7 +1,9 @@
 // ===== Vân Đăng · Công thức chiến đấu =====
 // Logic thuần (GDD 2.1, 2.3, 2.9): không THREE, không DOM. Gắn thêm hàm vào Core của 34-core.js.
 // Đơn vị theo makeUnit: { uid, tpl, side, hp, stats:{hp,str,mag,skl,spd,lck,def,res,con}, weapon? }
-// weapon: { name, mt, hit, crit, wt, minRange, maxRange, magic }   (chưa có data/weapons.json — tuần 3)
+// weapon: tạo bằng Core.makeWeapon từ data/weapons.json:
+//   { id, name, type, rank, magic, mt, hit, crit, wt, minRange, maxRange, effective:[luật khắc chế], uses?, maxUses? }
+// Khắc chế (GDD 2.4) so w.effective với tags của mục tiêu (Nguoi/Ma/Yeu/Bay/Thuy) và statuses (vd 'uot').
 // ctx: { distance, atkTerrain, defTerrain, rng | seed, mode:'casual'|'classic'|'deadzone', noCounter }
 //   atkTerrain/defTerrain: ô địa hình của terrain.json (dùng khóa avo, def) — lấy bằng Core.terrainOf.
 Object.assign(Core, (() => {
@@ -25,25 +27,40 @@ Object.assign(Core, (() => {
 
   const attackSpeed = u => { const w = u.weapon; return u.stats.spd - Math.max(0, (w ? w.wt || 0 : 0) - u.stats.con); };
   function inRange(u, d) {
-    const w = u.weapon; if (!w) return false;
+    const w = u.weapon; if (!w || !Core.usable(u, w)) return false;   // chưa đủ hạng / đã gãy thì không đánh
     const lo = w.minRange != null ? w.minRange : 1, hi = w.maxRange != null ? w.maxRange : lo;
     return d >= lo && d <= hi;
   }
 
+  // Luật khắc chế của vũ khí w áp lên mục tiêu tg (khớp một nhãn hoặc một trạng thái là đủ).
+  const statusIds = tg => (tg.statuses || []).map(x => typeof x === 'string' ? x : x.id);
+  function effectiveOn(w, tg) {
+    if (!w || !w.effective) return [];
+    const tags = tg.tags || [], st = statusIds(tg);
+    return w.effective.filter(r => (r.vs || []).some(t => tags.includes(t)) || (r.vsStatus || []).some(x => st.includes(x)));
+  }
+
   // Số liệu một phía: u đánh tg. uT/tT = ô địa hình đang đứng.
+  // Khắc chế: mtMult nhân Uy lực; dmgMult nhân sát thương sau Thủ (làm tròn xuống); hit cộng vào tỷ lệ trúng trận.
+  // Nhiều luật cùng khớp thì nhân/cộng dồn (dữ liệu hiện tại chưa có vũ khí nào khớp 2 luật cùng lúc).
   function side(u, tg, uT, tT) {
     const w = u.weapon, s = u.stats, ts = tg.stats, magic = !!(w && w.magic);
     const as = attackSpeed(u), tAs = attackSpeed(tg);
-    const atk = w ? (magic ? s.mag : s.str) + (w.mt || 0) : 0;
-    const dmg = Math.max(0, atk - ((magic ? ts.res : ts.def) + ((tT && tT.def) || 0)));
+    const eff = effectiveOn(w, tg);
+    let mtMult = 1, dmgMult = 1, effHit = 0;
+    for (const r of eff) { mtMult *= r.mtMult || 1; dmgMult *= r.dmgMult || 1; effHit += r.hit || 0; }
+    const atk = w ? (magic ? s.mag : s.str) + Math.floor((w.mt || 0) * mtMult) : 0;
+    const dmg = Math.floor(Math.max(0, atk - ((magic ? ts.res : ts.def) + ((tT && tT.def) || 0))) * dmgMult);
     const hitStat = w ? (w.hit || 0) + s.skl * 2 + half(s.lck) : 0;
-    const hit = clamp(hitStat - (tAs * 2 + ts.lck + ((tT && tT.avo) || 0)), 0, 100);
+    const hit = clamp(hitStat + effHit - (tAs * 2 + ts.lck + ((tT && tT.avo) || 0)), 0, 100);
     const critStat = w ? (w.crit || 0) + half(s.skl) : 0;
     return {
       atk, dmg, as, hitStat, hit, trueHit: trueHit(hit),
       avoid: as * 2 + s.lck + ((uT && uT.avo) || 0),
       critStat, crit: clamp(critStat - ts.lck, 0, 100),
       doubles: as - tAs >= DOUBLE_AS,
+      effective: eff.map(r => r.id), effHit,
+      uses: w && w.maxUses ? w.uses : null,      // null = vũ khí thường, không độ bền
     };
   }
 
@@ -79,17 +96,22 @@ Object.assign(Core, (() => {
     if (fc.defender.canCounter && fc.defender.doubles) order.push(['D', def, att, fc.defender]);
     let fallen = null;
     for (const [who, src, tg, s] of order) {
-      const h = roll2RN(rng, s.hit); let crit = false, damage = 0;
+      const w = src.weapon;
+      if (w && w.maxUses && w.uses <= 0) continue;   // vũ khí gãy giữa trận → bỏ các đòn còn lại
+      const h = roll2RN(rng, s.hit); let crit = false, damage = 0, broke = false;
       if (h.hit) {
         crit = s.crit > 0 && rn(rng) < s.crit;   // chí mạng: 1RN, chỉ quay khi trúng
         damage = s.dmg * (crit ? CRIT_MULT : 1);
         tg.hp = Math.max(0, tg.hp - damage);
+        if (w && w.maxUses) { w.uses--; broke = w.uses <= 0; }   // độ bền: trừ khi trúng
       }
-      log.push({ who, from: src.uid, to: tg.uid, hit: h.hit, crit, damage, rolls: h.rolls, targetHp: tg.hp });
+      log.push({ who, from: src.uid, to: tg.uid, hit: h.hit, crit, damage, rolls: h.rolls, targetHp: tg.hp, broke });
       if (tg.hp <= 0) { fallen = tg; break; }
     }
+    // Vũ khí gãy → tự đổi sang cái tiếp theo trong túi (nếu có) cho lượt sau.
+    for (const u of [att, def]) if (u.weapon && u.weapon.maxUses && u.weapon.uses <= 0 && u.inventory) Core.equipFirst(u);
     return { forecast: fc, strikes: log, outcome: fallen ? knockOut(fallen, ctx.mode || 'casual') : null };
   }
 
-  return { roll2RN, trueHit, attackSpeed, inRange, forecast, fight, knockOut };
+  return { effectiveOn, roll2RN, trueHit, attackSpeed, inRange, forecast, fight, knockOut };
 })());

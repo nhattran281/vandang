@@ -1,0 +1,39 @@
+{
+  "_doc": "Vũ khí (GDD 2.4, 2.5). Số liệu TẠM, chỉnh ở tuần 11. rank: hạng cần để cầm (E→C→A→S). uses: độ bền, CHỈ vũ khí mạnh (bạc, cổ vật, huyền thoại) mới có; trừ 1 mỗi đòn trúng. range: [min, max]. effective: khóa trong 'effectiveness', gắn theo loại vũ khí.",
+  "ranks": ["E", "C", "A", "S"],
+  "effectiveness": {
+    "_doc": "Khắc chế Người – Ma – Yêu – Bay – Thủy (GDD 2.4). vs: nhãn mục tiêu; vsStatus: trạng thái mục tiêu (chỉ cần khớp một). mtMult nhân Uy lực trước khi trừ Thủ (kiểu effective FE); dmgMult nhân sát thương sau khi trừ Thủ (làm tròn xuống); hit cộng vào Tỷ lệ trúng trận trước khi kẹp 0–100.",
+    "tru_ma":    { "name": "Trừ Ma",   "vs": ["Ma"],   "dmgMult": 1.5, "hit": 15 },
+    "thiet_khi": { "name": "Thiết khí", "vs": ["Yeu"],  "dmgMult": 1.5, "hit": 15 },
+    "ha_bay":    { "name": "Hạ Bay",   "vs": ["Bay"],  "mtMult": 2 },
+    "set_nuoc":  { "name": "Sét nước", "vs": ["Thuy"], "vsStatus": ["uot"], "dmgMult": 1.5 }
+  },
+  "types": {
+    "kiem":   { "name": "Kiếm",        "effective": ["thiet_khi"] },
+    "dao":    { "name": "Đao",         "effective": ["thiet_khi"] },
+    "giao":   { "name": "Giáo",        "effective": [] },
+    "cung":   { "name": "Cung",        "effective": ["ha_bay"] },
+    "no":     { "name": "Nỏ",          "effective": ["ha_bay"] },
+    "lua_den": { "name": "Lửa đèn",    "magic": true, "effective": ["tru_ma"] },
+    "tru_ta": { "name": "Phép trừ tà", "magic": true, "effective": ["tru_ma"] },
+    "set":    { "name": "Sấm sét",     "magic": true, "effective": ["set_nuoc"] }
+  },
+  "items": {
+    "kiem_sat":   { "name": "Kiếm sắt",      "type": "kiem",    "rank": "E", "mt": 5,  "hit": 90, "crit": 0,  "wt": 5,  "range": [1, 1] },
+    "kiem_thep":  { "name": "Kiếm thép",     "type": "kiem",    "rank": "C", "mt": 8,  "hit": 75, "crit": 0,  "wt": 10, "range": [1, 1] },
+    "kiem_bac":   { "name": "Kiếm bạc",      "type": "kiem",    "rank": "A", "mt": 13, "hit": 80, "crit": 0,  "wt": 8,  "range": [1, 1], "uses": 20 },
+    "dao_sat":    { "name": "Đao sắt",       "type": "dao",     "rank": "E", "mt": 8,  "hit": 75, "crit": 0,  "wt": 10, "range": [1, 1] },
+    "dao_sat_thu": { "name": "Đao sát thủ",  "type": "dao",     "rank": "C", "mt": 9,  "hit": 75, "crit": 30, "wt": 7,  "range": [1, 1], "uses": 20 },
+    "giao_sat":   { "name": "Giáo sắt",      "type": "giao",    "rank": "E", "mt": 7,  "hit": 80, "crit": 0,  "wt": 8,  "range": [1, 1] },
+    "giao_nem":   { "name": "Giáo ném",      "type": "giao",    "rank": "C", "mt": 6,  "hit": 65, "crit": 0,  "wt": 11, "range": [1, 2] },
+    "giao_bac":   { "name": "Giáo bạc",      "type": "giao",    "rank": "A", "mt": 14, "hit": 75, "crit": 0,  "wt": 10, "range": [1, 1], "uses": 20 },
+    "cung_go":    { "name": "Cung gỗ",       "type": "cung",    "rank": "E", "mt": 6,  "hit": 85, "crit": 0,  "wt": 5,  "range": [2, 2] },
+    "cung_bac":   { "name": "Cung bạc",      "type": "cung",    "rank": "A", "mt": 12, "hit": 75, "crit": 0,  "wt": 6,  "range": [2, 2], "uses": 20 },
+    "no_tay":     { "name": "Nỏ tay",        "type": "no",      "rank": "E", "mt": 8,  "hit": 80, "crit": 0,  "wt": 7,  "range": [2, 2] },
+    "no_than":    { "name": "Nỏ thần",       "type": "no",      "rank": "S", "mt": 15, "hit": 85, "crit": 10, "wt": 8,  "range": [2, 3], "uses": 10 },
+    "lua_den":    { "name": "Lửa đèn",       "type": "lua_den", "rank": "E", "mt": 5,  "hit": 90, "crit": 0,  "wt": 4,  "range": [1, 2] },
+    "lua_xanh":   { "name": "Lửa xanh Trấn", "type": "lua_den", "rank": "S", "mt": 14, "hit": 90, "crit": 5,  "wt": 6,  "range": [1, 2], "uses": 15 },
+    "kinh_tru_ta": { "name": "Kinh trừ tà",  "type": "tru_ta",  "rank": "E", "mt": 4,  "hit": 95, "crit": 0,  "wt": 2,  "range": [1, 2] },
+    "an_tru_ta":  { "name": "Ấn trừ tà",     "type": "tru_ta",  "rank": "C", "mt": 7,  "hit": 85, "crit": 0,  "wt": 4,  "range": [1, 2] }
+  }
+}

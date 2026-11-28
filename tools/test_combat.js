@@ -4,9 +4,11 @@ const ROOT = path.dirname(__dirname);
 const src = f => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8');
 const Core = vm.runInNewContext(src('34-core.js') + '\n' + src('36-combat.js') + '\nCore', {});
 const eq = (a, b) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b)); // mảng từ vm khác realm nên so qua JSON
+const rd = p => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
+const DATA = { terrain: rd('data/terrain.json'), units: rd('data/units.json'), weapons: rd('data/weapons.json') };
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok', name); };
 
-// Vũ khí thử (số liệu TẠM, chưa phải data/weapons.json)
+// Vũ khí viết tay cho các bài kiểm công thức 2.3 (không khắc chế, không hạng) — tách khỏi số liệu JSON đang chỉnh
 const sword = { name: 'Kiếm sắt', mt: 5, hit: 90, crit: 0, wt: 5, minRange: 1, maxRange: 1 };
 const bow = { name: 'Cung', mt: 6, hit: 85, crit: 0, wt: 5, minRange: 2, maxRange: 2 };
 const dao = { name: 'Đao sát', mt: 9, hit: 75, crit: 30, wt: 7, minRange: 1, maxRange: 1 };
@@ -110,5 +112,97 @@ t('fight: chí mạng ×3, tần suất khớp tỷ lệ', () => {
 t('fight: không vũ khí → không đánh, không phản đòn', () => {
   assert.strictEqual(Core.fight(unit({}, { weapon: null }), unit({}), { seed: 1 }).strikes.length, 0);
   assert.ok(Core.fight(unit({}), unit({ hp: 99 }, { weapon: null }), { seed: 1 }).strikes.every(s => s.who === 'A'));
+});
+
+// ---------- Dữ liệu vũ khí (GDD 2.5) ----------
+const W = id => Core.makeWeapon(id, DATA);
+t('weapons.json + vũ khí của các mẫu đơn vị hợp lệ', () => eq(Core.validateWeapons(DATA), []));
+t('validateWeapons bắt lỗi: hạng E có độ bền, mẫu chưa đủ hạng, loại lạ', () => {
+  const bad = JSON.parse(JSON.stringify(DATA));
+  bad.weapons.items.kiem_sat.uses = 30;
+  bad.weapons.items.thu = { name: 'x', type: 'roi', rank: 'E', mt: 1, hit: 1, wt: 1, range: [1, 1] };
+  bad.units.templates.vien_kiem.weapons = ['kiem_bac'];
+  const errs = Core.validateWeapons(bad).join('\n');
+  assert.ok(/kiem_sat.*không có độ bền/.test(errs), errs);
+  assert.ok(/loại lạ 'roi'/.test(errs), errs);
+  assert.ok(/vien_kiem.*kiem_bac.*cần A/.test(errs), errs);
+});
+t('makeWeapon: chỉ vũ khí mạnh có độ bền; mỗi bản riêng', () => {
+  const thuong = W('kiem_sat'), bac = W('kiem_bac');
+  assert.strictEqual(thuong.uses, undefined); assert.strictEqual(bac.uses, 20); assert.strictEqual(bac.maxUses, 20);
+  for (const id in DATA.weapons.items) { const it = DATA.weapons.items[id]; assert.ok(!it.uses || it.rank !== 'E', id); }
+  const b2 = W('kiem_bac'); b2.uses = 3; assert.strictEqual(bac.uses, 20);
+  eq(W('lua_den').effective.map(r => r.id), ['tru_ma']); assert.strictEqual(W('lua_den').magic, true);
+  eq(W('giao_sat').effective, []);
+});
+t('makeUnit: gắn túi vũ khí, trang bị cái đầu tiên', () => {
+  const u = Core.makeUnit('dang', DATA, 'ta', 0, 0, 1);
+  eq(u.inventory.map(w => w.id), ['kiem_sat', 'lua_den']); assert.strictEqual(u.weapon.id, 'kiem_sat');
+  assert.strictEqual(Core.makeUnit('dan_lang', DATA, 'npc', 0, 0, 2).weapon, null);
+});
+t('hạng chưa đủ → không đánh, không phản đòn', () => {
+  const A = unit({}, { weapon: W('kiem_bac'), ranks: { kiem: 'C' } });
+  assert.strictEqual(Core.canWield(A, A.weapon), false);
+  assert.strictEqual(Core.forecast(A, unit({})).attacker.canAttack, false);
+  assert.strictEqual(Core.forecast(unit({}), A).defender.canCounter, false);
+  assert.strictEqual(Core.canWield(unit({}, { ranks: { kiem: 'A' } }), W('kiem_bac')), true);
+});
+
+// ---------- Khắc chế Người – Ma – Yêu – Bay – Thủy (GDD 2.4) ----------
+const tough = (tags, extra) => unit({ def: 4, res: 2, spd: 10, lck: 10 }, Object.assign({ side: 'dich', tags, weapon: null }, extra)); // Né 30
+t('Thiết khí (kiếm, đao) vs Yêu: ST ×1.5 làm tròn xuống, +15 trúng', () => {
+  const A = unit({ str: 8, skl: 7, lck: 6 }, { weapon: W('kiem_sat') });   // Công 13, Trúng 90+14+3 = 107
+  const yeu = Core.forecast(A, tough(['Yeu'])).attacker, nguoi = Core.forecast(A, tough(['Nguoi'])).attacker;
+  assert.strictEqual(nguoi.dmg, 9); assert.strictEqual(nguoi.hit, 77); eq(nguoi.effective, []);
+  assert.strictEqual(yeu.dmg, 13);  assert.strictEqual(yeu.hit, 92); eq(yeu.effective, ['thiet_khi']);  // floor(9×1.5)
+  eq(Core.forecast(unit({ str: 8 }, { weapon: W('dao_sat') }), tough(['Yeu'])).attacker.effective, ['thiet_khi']);
+  eq(Core.forecast(unit({ str: 8 }, { weapon: W('giao_sat') }), tough(['Yeu'])).attacker.effective, []);   // giáo không khắc
+});
+t('Lửa đèn, phép trừ tà vs Ma: dùng Kháng, ST ×1.5, +15 trúng', () => {
+  const A = unit({ mag: 7 }, { weapon: W('lua_den') });                    // Công 12 − Kháng 2 = 10
+  const f = Core.forecast(A, tough(['Ma'])).attacker;
+  assert.strictEqual(f.dmg, 15); assert.strictEqual(f.effHit, 15);
+  assert.strictEqual(Core.forecast(A, tough(['Yeu'])).attacker.dmg, 10);
+  assert.strictEqual(Core.forecast(unit({ mag: 7 }, { weapon: W('kinh_tru_ta') }), tough(['Ma'])).attacker.dmg, 13); // floor((11−2)×1.5)
+});
+t('Cung, nỏ vs Bay: Uy lực ×2, không cộng trúng; Đầu bay (Ma, Bay) chỉ ăn luật Bay', () => {
+  const A = unit({ str: 5 }, { weapon: W('cung_go') });                    // Mt 6
+  const bay = Core.forecast(A, tough(['Bay']), { distance: 2 }).attacker;
+  assert.strictEqual(bay.atk, 17); assert.strictEqual(bay.dmg, 13); assert.strictEqual(bay.effHit, 0);
+  assert.strictEqual(Core.forecast(A, tough(['Nguoi']), { distance: 2 }).attacker.dmg, 7);
+  eq(Core.forecast(A, tough(['Ma', 'Bay']), { distance: 2 }).attacker.effective, ['ha_bay']);
+  assert.strictEqual(Core.forecast(unit({ str: 5 }, { weapon: W('no_tay') }), tough(['Bay']), { distance: 2 }).attacker.atk, 21);
+});
+t('Sấm sét vs Thủy hoặc mục tiêu Ướt: ST ×1.5', () => {
+  const set = Object.assign(W('lua_den'), { type: 'set', effective: [Object.assign({ id: 'set_nuoc' }, DATA.weapons.effectiveness.set_nuoc)] });
+  const A = unit({ mag: 7 }, { weapon: set });                             // ST gốc 10
+  assert.strictEqual(Core.forecast(A, tough(['Yeu', 'Thuy'])).attacker.dmg, 15);
+  assert.strictEqual(Core.forecast(A, tough(['Nguoi'], { statuses: ['uot'] })).attacker.dmg, 15);
+  assert.strictEqual(Core.forecast(A, tough(['Nguoi'], { statuses: [{ id: 'uot', turns: 2 }] })).attacker.dmg, 15);
+  assert.strictEqual(Core.forecast(A, tough(['Nguoi'], { statuses: ['bong'] })).attacker.dmg, 10);
+});
+t('khắc chế áp cả khi phản đòn; trúng vẫn kẹp ≤ 100', () => {
+  const ma = unit({ mag: 9, skl: 20, lck: 20 }, { weapon: W('lua_den') });
+  const f = Core.forecast(unit({ spd: 0, lck: 0 }, { tags: ['Ma'] }), ma);
+  eq(f.defender.effective, ['tru_ma']); assert.strictEqual(f.defender.hit, 100);
+});
+
+// ---------- Độ bền (GDD 2.5) ----------
+t('độ bền: trừ 1 mỗi đòn trúng; gãy giữa trận thì dừng và đổi vũ khí kế', () => {
+  const bac = W('kiem_bac'); bac.uses = 1;
+  const A = unit({ str: 10, skl: 30, spd: 20 }, { ranks: { kiem: 'A' }, inventory: [bac, W('kiem_sat')] }); A.weapon = bac;
+  const r = Core.fight(A, unit({ hp: 999, spd: 0, lck: 0 }, { weapon: null }), { seed: 5 });
+  assert.strictEqual(r.forecast.attacker.strikes, 2);        // dự báo đánh đôi…
+  assert.strictEqual(r.strikes.length, 1);                  // …nhưng gãy sau đòn đầu
+  assert.strictEqual(r.strikes[0].broke, true); assert.strictEqual(bac.uses, 0);
+  assert.strictEqual(A.weapon.id, 'kiem_sat');
+});
+t('độ bền: trượt không trừ; vũ khí thường không có độ bền', () => {
+  const bac = W('kiem_bac');
+  const A = unit({ skl: 0, lck: 0 }, { ranks: { kiem: 'A' }, weapon: bac });
+  Core.fight(A, unit({ hp: 999, spd: 30, lck: 30 }, { weapon: null }), { seed: 5 });   // trúng 0%
+  assert.strictEqual(bac.uses, 20);
+  const s = W('kiem_sat'); Core.fight(unit({ skl: 30 }, { weapon: s }), unit({ hp: 999 }, { weapon: null }), { seed: 5 });
+  assert.strictEqual(s.uses, undefined);
 });
 console.log(n + ' bài kiểm thử đạt');

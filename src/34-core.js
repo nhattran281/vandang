@@ -52,12 +52,62 @@ const Core = (() => {
     return errs;
   }
 
+  // ---------- Vũ khí (GDD 2.4, 2.5) ----------
+  const RANKS = 'ECAS';                     // E → C → A → S
+  const rankIdx = r => RANKS.indexOf(r || 'E');
+
+  // Tạo một bản vũ khí từ data/weapons.json. Mỗi đơn vị giữ bản riêng (độ bền riêng).
+  // Khắc chế của loại vũ khí được chép sẵn vào w.effective → Core.forecast không cần đọc DATA.
+  function makeWeapon(id, data) {
+    const W = data.weapons; if (!W) throw new Error('thiếu data/weapons.json');
+    const it = W.items[id]; if (!it) throw new Error('không có vũ khí ' + id);
+    const ty = W.types[it.type]; if (!ty) throw new Error(`vũ khí ${id}: loại lạ '${it.type}'`);
+    const r = it.range || [1, 1];
+    const w = { id, name: it.name, type: it.type, rank: it.rank || 'E', magic: !!ty.magic, mt: it.mt | 0, hit: it.hit | 0, crit: it.crit | 0, wt: it.wt | 0, minRange: r[0], maxRange: r[1] != null ? r[1] : r[0] };
+    w.effective = (ty.effective || []).map(k => Object.assign({ id: k }, W.effectiveness[k]));
+    if (it.uses) { w.uses = it.uses; w.maxUses = it.uses; }   // chỉ vũ khí mạnh có độ bền
+    return w;
+  }
+  // Hạng của đơn vị đủ cầm vũ khí chưa. Vũ khí hạng E ai cũng cầm được.
+  const canWield = (u, w) => !!w && rankIdx(w.rank) <= ((u.ranks && u.ranks[w.type]) ? rankIdx(u.ranks[w.type]) : 0);
+  const usable = (u, w) => canWield(u, w) && !(w.maxUses && w.uses <= 0);
+  // Trang bị cái đầu tiên còn dùng được trong túi (kiểu FE).
+  function equipFirst(u) { u.weapon = (u.inventory || []).find(w => usable(u, w)) || null; return u.weapon; }
+
+  // Kiểm tra weapons.json + vũ khí của các mẫu đơn vị. Trả về mảng lỗi.
+  function validateWeapons(data) {
+    const errs = [], W = data.weapons;
+    if (!W) return ['thiếu data/weapons.json'];
+    for (const k in W.types) for (const e of W.types[k].effective || []) if (!W.effectiveness[e]) fail(errs, `loại ${k}: không có khắc chế '${e}'`);
+    for (const id in W.items) {
+      const it = W.items[id];
+      if (!W.types[it.type]) fail(errs, `vũ khí ${id}: loại lạ '${it.type}'`);
+      if (rankIdx(it.rank) < 0) fail(errs, `vũ khí ${id}: hạng lạ '${it.rank}'`);
+      if (it.uses && rankIdx(it.rank) === 0) fail(errs, `vũ khí ${id}: hạng E là vũ khí thường, không có độ bền`);
+      if (!Array.isArray(it.range) || it.range[0] < 1 || it.range[1] < it.range[0]) fail(errs, `vũ khí ${id}: range phải là [min, max] với 1 ≤ min ≤ max`);
+    }
+    for (const t in data.units.templates) {
+      const tpl = data.units.templates[t];
+      for (const r in tpl.ranks || {}) if (rankIdx(tpl.ranks[r]) < 0) fail(errs, `mẫu ${t}: hạng lạ '${tpl.ranks[r]}'`);
+      for (const id of tpl.weapons || []) {
+        const it = W.items[id];
+        if (!it) { fail(errs, `mẫu ${t}: không có vũ khí '${id}'`); continue; }
+        if (!canWield({ ranks: tpl.ranks }, { type: it.type, rank: it.rank })) fail(errs, `mẫu ${t}: hạng chưa đủ cầm '${id}' (cần ${it.rank})`);
+      }
+    }
+    return errs;
+  }
+
   // Tạo một đơn vị từ mẫu. Chỉ số = bản sao stats của mẫu; hp hiện tại = hp tối đa.
   function makeUnit(tplId, data, side, x, y, uid) {
     const tpl = data.units.templates[tplId];
     if (!tpl) throw new Error('không có mẫu đơn vị ' + tplId);
     const stats = {}; for (const k of STAT_KEYS) stats[k] = tpl.stats[k] | 0;
-    return { uid, tpl: tplId, name: tpl.name, title: tpl.title || '', side, x, y, lv: tpl.lv || 1, exp: 0, moveType: tpl.moveType || 'bo', tags: (tpl.tags || []).slice(), stats, hp: stats.hp, done: false };
+    const u = { uid, tpl: tplId, name: tpl.name, title: tpl.title || '', side, x, y, lv: tpl.lv || 1, exp: 0, moveType: tpl.moveType || 'bo', tags: (tpl.tags || []).slice(), stats, hp: stats.hp, done: false };
+    u.ranks = Object.assign({}, tpl.ranks);
+    u.inventory = (tpl.weapons || []).map(id => makeWeapon(id, data));
+    equipFirst(u);
+    return u;
   }
 
   // Đọc map JSON thành trạng thái trận: lưới ô + danh sách quân + rương.
@@ -106,5 +156,5 @@ const Core = (() => {
     return { terrain, height, units };
   }
 
-  return { rng, validateMap, loadMap, makeUnit, inside, tile, terrainOf, moveCost, unitAt, chestAt, toAscii, STAT_KEYS };
+  return { rng, validateMap, loadMap, makeUnit, makeWeapon, canWield, usable, equipFirst, validateWeapons, RANKS, inside, tile, terrainOf, moveCost, unitAt, chestAt, toAscii, STAT_KEYS };
 })();

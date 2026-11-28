@@ -5,21 +5,67 @@
       "id": "ch1",
       "name": "Ch.1 — Làng Chài Cháy",
       "map": "lang_chai",
-      "join": ["dang", "linh", "tran"],
-      "win": ["rout", { "type": "reach", "units": ["dang", "linh"], "text": "đưa Đăng và Linh lên thuyền" }],
-      "rules": { "noSkills": true, "noStatus": true, "fog": false, "deadZone": false },
+      "join": [
+        "dang",
+        "linh",
+        "tran"
+      ],
+      "win": [
+        "rout",
+        {
+          "type": "reach",
+          "units": [
+            "dang",
+            "linh"
+          ],
+          "text": "đưa Đăng và Linh lên thuyền"
+        }
+      ],
+      "rules": {
+        "noSkills": true,
+        "noStatus": true,
+        "fog": false,
+        "deadZone": false
+      },
       "intro": [
-        { "who": null, "text": "Làng chài ven biển, giữa trưa. Khói bốc từ mái tranh, lính Đăng Viện lục từng nhà." },
-        { "who": "tran", "text": "Chúng tìm con bé. Thuyền còn neo ở bến, đi ngay thì kịp." },
-        { "who": "linh", "text": "Cha ơi… họ đốt cả nhà bà Tư rồi." },
-        { "who": "dang", "text": "Đứng sau cha. Đừng rời xa quá hai bước." },
-        { "who": "tran", "text": "Lão già này còn cầm được kiếm. Để lão đi trước." }
+        {
+          "who": null,
+          "text": "Làng chài ven biển, giữa trưa. Khói bốc từ mái tranh, lính Đăng Viện lục từng nhà."
+        },
+        {
+          "who": "tran",
+          "text": "Chúng tìm con bé. Thuyền còn neo ở bến, đi ngay thì kịp."
+        },
+        {
+          "who": "linh",
+          "text": "Cha ơi… họ đốt cả nhà bà Tư rồi."
+        },
+        {
+          "who": "dang",
+          "text": "Đứng sau cha. Đừng rời xa quá hai bước."
+        },
+        {
+          "who": "tran",
+          "text": "Lão già này còn cầm được kiếm. Để lão đi trước."
+        }
       ],
       "outro": [
-        { "who": "dang", "text": "Lên thuyền. Đi." },
-        { "who": "linh", "text": "Còn dân làng… có ai cứu họ không cha?" },
-        { "who": "tran", "text": "Viện sẽ quay lại, đông hơn. Qua được bến đò rồi hẵng tính." },
-        { "who": "dang", "text": "Cha chỉ lo được cho con thôi." }
+        {
+          "who": "dang",
+          "text": "Lên thuyền. Đi."
+        },
+        {
+          "who": "linh",
+          "text": "Còn dân làng… có ai cứu họ không cha?"
+        },
+        {
+          "who": "tran",
+          "text": "Viện sẽ quay lại, đông hơn. Qua được bến đò rồi hẵng tính."
+        },
+        {
+          "who": "dang",
+          "text": "Cha chỉ lo được cho con thôi."
+        }
       ],
       "tutorial": {
         "turns": 2,
@@ -33,6 +79,128 @@
           "menu": "Chưa ai trong tầm: chọn Chờ để quân này nghỉ lượt."
         }
       }
+    },
+    {
+      "id": "ch2",
+      "name": "Ch.2 — Bến Đò Sương",
+      "map": "ben_do",
+      "join": [
+        "cuoi"
+      ],
+      "win": {
+        "type": "area",
+        "rect": [
+          0,
+          0,
+          11,
+          4
+        ],
+        "text": "đưa cả đội sang bờ bắc"
+      },
+      "rules": {
+        "noSkills": false,
+        "noStatus": true,
+        "fog": false,
+        "deadZone": false
+      },
+      "intro": [
+        {
+          "who": null,
+          "text": "Bến đò lúc rạng sáng, sương phủ mặt sông. Cầu gỗ hẹp, bên kia lính Viện đã giương cung chờ."
+        },
+        {
+          "who": "cuoi",
+          "text": "Này ông đèn xanh! Tôi biết lối qua bãi nông, đổi lại cho tôi đi cùng. Tôi từng lội sông này cõng cả con trâu."
+        },
+        {
+          "who": "tran",
+          "text": "Bãi nông có ma da. Dưới cầu cũng vậy. Đứng mép nước là bị kéo đấy."
+        },
+        {
+          "who": "linh",
+          "text": "Chú ấy hát hay lắm cha. Cho chú đi với mình nhé?"
+        },
+        {
+          "who": "dang",
+          "text": "Đi thì đi. Không theo kịp thì cha không đợi."
+        }
+      ],
+      "outro": [
+        {
+          "who": "cuoi",
+          "text": "Thấy chưa! Tôi bảo rồi, ma da sợ tiếng đàn của tôi. Chúng bơi mất cả rồi."
+        },
+        {
+          "who": "tran",
+          "text": "Chúng bơi mất vì lưỡi kiếm của lão."
+        },
+        {
+          "who": "linh",
+          "text": "Rừng phía trước tối quá. Có tiếng gì như hổ gầm…"
+        },
+        {
+          "who": "dang",
+          "text": "Đi sát cha. Qua rừng là tới đất của người thợ săn."
+        }
+      ]
+    },
+    {
+      "id": "ch3",
+      "name": "Ch.3 — Rừng Trành",
+      "map": "rung_co_thu",
+      "join": [
+        "hung_no"
+      ],
+      "win": {
+        "type": "boss",
+        "tpl": "hum_tinh"
+      },
+      "rules": {
+        "noSkills": false,
+        "noStatus": false,
+        "fog": false,
+        "deadZone": false
+      },
+      "intro": [
+        {
+          "who": null,
+          "text": "Rừng cổ thụ, nắng chỉ lọt qua từng vệt. Những bóng người xám lê bước trên lối mòn, mắt vàng như mắt hổ."
+        },
+        {
+          "who": "hung_no",
+          "text": "Đừng đi nữa. Đó là ma trành, hồn người bị hùm tinh ăn thịt. Còn trành dắt lối thì con hổ còn mạnh."
+        },
+        {
+          "who": "dang",
+          "text": "Ngươi là ai?"
+        },
+        {
+          "who": "hung_no",
+          "text": "Thợ săn rừng này. Hạ trành trước, rồi nỏ của tôi lo con hổ. Lối mòn bên trái, sườn núi bên phải."
+        },
+        {
+          "who": "cuoi",
+          "text": "Hổ à? Hồi trẻ tôi cưỡi hổ đi chợ suốt. Nó hiền như mèo, chỉ hơi kén ăn."
+        }
+      ],
+      "outro": [
+        {
+          "who": "hung_no",
+          "text": "Hồn trành được thả rồi. Bao năm nay tôi mới thấy rừng này yên."
+        },
+        {
+          "who": "linh",
+          "text": "Họ bay đi như đom đóm, cha có thấy không?"
+        },
+        {
+          "who": "dang",
+          "text": "Thấy. Đi thôi. Viện không dừng ở bến đò đâu."
+        },
+        {
+          "who": "hung_no",
+          "text": "Cho tôi đi theo. Nỏ này còn nợ Viện một mũi tên."
+        }
+      ]
     }
   ]
 }

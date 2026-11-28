@@ -16,7 +16,8 @@ Object.assign(Core, (() => {
     dung_yen: {},                        // Đứng yên (boss): không bao giờ rời ô, đánh ai vào tầm
     ho_ve: { follow: null, radius: 2, protect: 2 },   // Hộ vệ: chỉ đứng trong bán kính quanh đơn vị follow (id mẫu hoặc uid)
     dao_tac: { then: 'lao_vao' },        // Đạo tặc: tới rương chưa mở → mở → chạy tới ô thoát; hết rương thì dùng hành vi 'then'
-    chua_tri: { radius: 2 }              // Chữa trị: hồi đồng minh máu thấp; không ai bị thương thì đi theo đội, chọn ô an toàn
+    chua_tri: { radius: 2 },             // Chữa trị: hồi đồng minh máu thấp; không ai bị thương thì đi theo đội, chọn ô an toàn
+    toi_dich: {}                         // Tới đích (tuần 5 mục 5, chủ yếu cho AI phe ta / AI vs AI): không có nước đánh tốt thì tiến về vùng đích của chương
   };
   const FOES = { ta: ['dich'], dich: ['ta', 'npc'], npc: ['dich'] };   // giống 36-play.js / 37-skills.js
   const hostile = (a, b) => (FOES[a.side] || []).includes(b.side);
@@ -208,7 +209,18 @@ Object.assign(Core, (() => {
       return approach(S, u, data, mov !== undefined ? mov : u.stats.mov, goal) || here;
     }
     let fb = here;
+    const zone = B.type === 'toi_dich' ? goalZone(S, u) : null;
     if (B.type === 'dung_yen') fb = here;
+    else if (zone) {
+      fb = settle(zone);
+      // Đăng/Linh: chỉ nhích về đích qua ô không nguy hiểm hơn ô đang đứng (ô gần đích hơn theo chi phí đi), không có thì đứng ô an toàn nhất.
+      if (lord && risk0(fb) > 0) {
+        const zd = zoneDist(S, u, data, zone), d0 = zd.get(u.y * S.w + u.x);
+        const prog = stops.filter(([x, y]) => zd.has(y * S.w + x) && zd.get(y * S.w + x) < (d0 == null ? Infinity : d0));
+        const pick = prog.reduce((b, p) => !b || risk0(p) < risk0(b) || (risk0(p) === risk0(b) && zd.get(p[1] * S.w + p[0]) < zd.get(b[1] * S.w + b[0])) ? p : b, null);
+        fb = pick && risk0(pick) <= risk0(here) ? pick : safest(withHere(stops));
+      }
+    }
     else if (B.type === 'giu_vi_tri') fb = allowed(here) ? here : settle(allowed);
     else if (ward) fb = settle(near(ward, B.radius));
     else if (B.type === 'chua_tri') {
@@ -225,6 +237,30 @@ Object.assign(Core, (() => {
     const fbScore = -wTile * risk0(fb), w8 = wake ? { wake: true } : {};
     if (best && best.score - fbScore > minScore) return plan(best.x, best.y, best, Object.assign({ score: best.score }, w8));
     return plan(fb[0], fb[1], null, Object.assign({ score: fbScore }, w8));
+  }
+
+  // Vùng đích của chương cho quân u (S.goal, Core.outcome): area → vùng rect/tiles/exits (mọi quân cùng phe ta);
+  // reach → ô đích nếu u thuộc units. Không có (map thử, chương chỉ hạ địch / hạ boss) → null, khi đó Tới đích như Lao vào.
+  function goalZone(S, u) {
+    if (u.side !== 'ta' || !S.goal) return null;
+    const c = S.goal.win.find(c => c.type === 'area' || (c.type === 'reach' && (c.units || ['dang']).includes(u.tpl)));
+    return c ? ([x, y]) => Core.inZone(S, c, x, y) : null;
+  }
+
+  // Chi phí đi (bỏ qua quân) từ mọi ô tới vùng đích: Dijkstra ngược từ các ô trong vùng. Map idx → chi phí.
+  function zoneDist(S, u, data, zone) {
+    const d = new Map(), open = [];
+    for (let i = 0; i < S.w * S.h; i++) if (zone([i % S.w, (i / S.w) | 0]) && Core.moveCost(S, i % S.w, (i / S.w) | 0, u.moveType, data) !== null) { d.set(i, 0); open.push(i); }
+    while (open.length) {
+      let bi = 0; for (let k = 1; k < open.length; k++) if (d.get(open[k]) < d.get(open[bi])) bi = k;
+      const b = open.splice(bi, 1)[0], bx = b % S.w, by = (b / S.w) | 0;
+      for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+        const ax = bx + dx, ay = by + dy, a = ay * S.w + ax; if (!Core.inside(S, ax, ay)) continue;
+        const c = Core.stepCost(S, ax, ay, bx, by, u.moveType, data); if (c === null) continue;
+        if (!d.has(a) || d.get(b) + c < d.get(a)) { if (!d.has(a)) open.push(a); d.set(a, d.get(b) + c); }
+      }
+    }
+    return d;
   }
 
   // Đạo tặc: mang đồ thì chạy tới ô thoát (tới được thì thoát luôn); còn rương chưa mở thì tới ô kề rương và mở

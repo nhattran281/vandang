@@ -1,0 +1,12 @@
+{
+  "_doc": "AI chấm điểm (GDD 4). Số liệu TẠM, chỉnh ở tuần 11. Điểm một nước (ô đứng, mục tiêu, hành động) = damage × sát thương kỳ vọng gây ra + kill × xác suất hạ gục − counter × sát thương kỳ vọng bị phản đòn − death × xác suất chết khi phản đòn − tile × rủi ro ô đứng − skillCost × tài nguyên kỹ năng. Rủi ro ô đứng = tổng sát thương kỳ vọng mà các địch với tới ô đó trong lượt sau gây ra (mục tiêu nhân thêm xác suất còn sống), tối đa bằng HP còn lại sau phản đòn. Kỳ vọng tính đủ True Hit 2RN + chí mạng theo thứ tự đòn A → D → A → D. Phương án không đánh (tiến về ô gần nhất đánh được, hoặc đứng yên) có điểm = − tile × rủi ro ô đứng; nước đánh/kỹ năng tốt nhất chỉ được chọn khi hơn phương án đó quá minScore.",
+  "weights": {
+    "damage": 1,
+    "kill": 15,
+    "counter": 1,
+    "death": 25,
+    "tile": 0.5,
+    "skillCost": 2
+  },
+  "minScore": 0
+}

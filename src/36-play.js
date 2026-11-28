@@ -11,7 +11,8 @@
 //            P.foe + P.fc = mục tiêu đang xem và bảng dự báo (Core.forecast); P.wpns = vũ khí với tới P.foe, P.wpn = món đang xem
 //            Đổi vũ khí tự do (GDD 2.5): xác nhận đánh thì món đã chọn thành món đang cầm (lên đầu túi) và quyết định phản đòn lượt địch.
 //   'danh'  đang phát lại trận (P.battle: nhật ký Core.fight + đồng hồ phát lại; phần vẽ đọc qua battleView)
-// P.mode = 'may': lượt Địch / NPC đang tự chạy.
+// P.mode = 'may': lượt Địch / NPC đang tự chạy (Core.planTurn, 38-ai.js). Trận của quân máy phát lại qua P.battle như quân ta;
+//   P.act = hành động chờ chạy sau khi đi xong; P.lastPlan = kế hoạch gần nhất (để soi).
 // P.over: trận đã kết thúc (Đăng/Linh ngã → thua) — mọi thao tác bị khóa.
 // S.phase: 'ta' | 'dich' | 'npc'. Hết lượt NPC thì sang lượt ta mới (S.turn + 1).
 const Play = (() => {
@@ -25,7 +26,7 @@ const Play = (() => {
 
   function create(S, data, seed) {
     const P = { S, data, mode: 'cho', unit: null, R: null, target: null, path: null, anim: null, undo: null, banner: null, queue: [], gap: 0, ver: 0,
-      rng: Core.rng(seed != null ? seed : 1), targets: [], foe: null, fc: null, wpns: [], wpn: null, battle: null, lastFight: null, over: null };
+      rng: Core.rng(seed != null ? seed : 1), targets: [], foe: null, fc: null, wpns: [], wpn: null, battle: null, lastFight: null, over: null, act: null, lastPlan: null };
     P.banner = { text: `Lượt ${S.turn} · ${NAME.ta}`, side: 'ta', t: 0, dur: BANNER_TIME };
     return P;
   }
@@ -155,6 +156,7 @@ const Play = (() => {
     const b = P.battle; P.battle = null; P.lastFight = b.res; clearSel(P);
     const o = b.res.outcome;
     if (o && o.gameOver) { P.over = { text: 'Thua trận', side: 'dich', reason: (o.uid === b.a.uid ? b.a : b.d).name + ' đã ngã' }; P.ver++; return; }
+    if (P.S.phase !== 'ta') { P.mode = 'may'; P.gap = GAP_TIME; return; }   // trận của quân máy: đi tiếp quân sau
     if (!left(P)) endTurn(P);
   }
   // Ảnh chụp phát lại tại thời điểm hiện tại, cho phần vẽ: HP đang hiện, đòn đang chạy, số bay lên, quân đang rút lui.
@@ -194,22 +196,26 @@ const Play = (() => {
     P.mode = side === 'ta' ? 'cho' : 'may'; P.queue = side === 'ta' ? [] : units.map(u => u.uid); P.gap = 0;
   }
 
-  // Nước đi tạm cho quân máy (tới tuần 4 thay bằng AI chấm điểm):
-  // tìm ô kề quân ta gần nhất theo chi phí đi thật, rồi đi xa nhất có thể dọc đường đó trong tầm Di chuyển.
-  // Tất định: hòa thì lấy ô có chỉ số nhỏ hơn.
-  function planMove(S, u, data) {
-    const far = Core.reachable(S, u, data, { mov: 999 }), mov = u.stats.mov, foes = S.units.filter(o => o.side === 'ta' && o.hp > 0);
-    let goal = -1, best = Infinity;
-    for (const i of far.stops) {
-      const x = i % S.w, y = (i / S.w) | 0;
-      if (!foes.some(f => Math.abs(f.x - x) + Math.abs(f.y - y) === 1)) continue;
-      const c = far.cost.get(i); if (c < best) { best = c; goal = i; }
+  // ----- Quân máy (tuần 4): Core.planTurn (38-ai.js) chọn ô đứng + hành động; đi xong mới đánh. -----
+  // Thực hiện hành động đã lên kế hoạch cho quân máy u. Trả về true nếu có trận để phát lại.
+  function act(P, u, a) {
+    const S = P.S, tg = S.units.find(o => o.uid === a.target);
+    if (!tg || tg.hp <= 0 || u.hp <= 0) return false;
+    const hp0 = { [u.uid]: u.hp, [tg.uid]: tg.hp };
+    let res = null;
+    if (a.type === 'attack') {
+      const w = a.slot >= 0 && u.inventory ? u.inventory[a.slot] : u.weapon;
+      if (!w || !withWeapon(u, w, () => Core.inRange(u, dist(u, tg)))) return false;
+      equip(u, w); res = Core.fight(u, tg, ctxOf(P, u, tg));
+    } else if (a.type === 'skill') {
+      const r = Core.useSkill(S, u, a.skill, a.tx, a.ty, P.data, { rng: P.rng, mode: S.mode || 'casual' });
+      if (!r.ok || !r.combat) return false;
+      res = r.combat;
     }
-    if (goal < 0) return null;
-    const path = Core.pathTo(far, goal % S.w, (goal / S.w) | 0);
-    let end = 0; // ô xa nhất trong tầm mà dừng được
-    for (let k = 0; k < path.length; k++) { const [x, y] = path[k]; if (far.cost.get(y * S.w + x) > mov) break; if (Core.canStopAt(far, x, y)) end = k; }
-    return end > 0 ? path.slice(0, end + 1) : null;
+    if (!res || !res.strikes.length) return false;
+    P.battle = { a: u, d: tg, res, hp0, t: 0, dur: res.strikes.length * STRIKE_TIME + (res.outcome ? KO_TIME : 0) + END_TIME };
+    P.ver++;
+    return true;
   }
 
   function update(P, dt) {
@@ -226,10 +232,12 @@ const Play = (() => {
     if (P.mode !== 'may') return;
     if (P.gap > 0) { P.gap -= dt; return; }
     const S = P.S;
+    if (P.act) { const { u, a } = P.act; P.act = null; if (act(P, u, a)) return; }   // đi xong → đánh
     while (P.queue.length) {
       const id = P.queue.shift(), u = S.units.find(o => o.uid === id); if (!u || u.hp <= 0) continue;
-      u.done = true; const path = planMove(S, u, P.data);
-      if (path) { walk(P, u, path); P.ver++; return; }
+      u.done = true; const plan = Core.planTurn(S, u, P.data); P.lastPlan = plan;
+      if (plan.path.length > 1) { P.act = plan.action ? { u, a: plan.action } : null; walk(P, u, plan.path); P.ver++; return; }
+      if (plan.action && act(P, u, plan.action)) return;
     }
     startPhase(P, ORDER[(ORDER.indexOf(S.phase) + 1) % 3]);
   }
@@ -244,5 +252,5 @@ const Play = (() => {
 
   const left = P => P.S.units.filter(u => ready(P, u)).length;
 
-  return { create, ready, busy, select, cancel, tap, wait, undo, endTurn, update, animPos, left, planMove, targets, targetsOf, usableWeapons, attack, aim, cycleWeapon, back, confirm, battleView, STEP_TIME, STRIKE_TIME, IMPACT };
+  return { create, ready, busy, select, cancel, tap, wait, undo, endTurn, update, animPos, left, targets, targetsOf, usableWeapons, attack, aim, cycleWeapon, back, confirm, battleView, STEP_TIME, STRIKE_TIME, IMPACT };
 })();

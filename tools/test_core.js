@@ -2,10 +2,10 @@
 const fs = require('fs'), path = require('path'), vm = require('vm'), assert = require('assert');
 const ROOT = path.dirname(__dirname);
 const rd = p => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
-const DATA = { terrain: rd('data/terrain.json'), units: rd('data/units.json'), weapons: rd('data/weapons.json'), maps: {} };
+const DATA = { terrain: rd('data/terrain.json'), units: rd('data/units.json'), weapons: rd('data/weapons.json'), skills: rd('data/skills.json'), ai: rd('data/ai.json'), maps: {} };
 for (const f of fs.readdirSync(path.join(ROOT, 'data/maps'))) if (f.endsWith('.json')) { const m = rd('data/maps/' + f); DATA.maps[m.id] = m; }
 const src = f => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8');
-const { Core, Play } = vm.runInNewContext(src('34-core.js') + '\n' + src('36-combat.js') + '\n' + src('36-play.js') + '\n({ Core, Play })', {});
+const { Core, Play } = vm.runInNewContext(src('34-core.js') + '\n' + src('36-combat.js') + '\n' + src('36-play.js') + '\n' + src('37-skills.js') + '\n' + src('38-ai.js') + '\n({ Core, Play })', {});
 const eq = (a, b) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b)); // mảng từ vm khác realm nên so qua JSON
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok', name); };
 
@@ -147,9 +147,13 @@ t('quân ta đi hết thì tự sang lượt địch; địch tiến về quân 
   run(P, 6); assert.strictEqual(foe.x, 6); assert.strictEqual(M.phase, 'ta'); assert.strictEqual(M.turn, 2);
   assert.ok(!me.done && !foe.done); assert.strictEqual(Play.left(P), 1);
 });
-t('Hết lượt sớm; địch dừng kề quân ta, không đè lên', () => {
-  const M = mk(['.....']); put(M, 0, 0); const foe = put(M, 4, 0, { side: 'dich', mov: 9 }); const P = mkP(M);
-  assert.ok(Play.endTurn(P)); run(P, 6); assert.strictEqual(foe.x, 1); assert.strictEqual(M.turn, 2);
+t('Hết lượt sớm; địch đi vào tầm rồi đánh (Core.planTurn), không đè lên; xong trận thì về lượt ta', () => {
+  const M = mk(['.....']); const me = put(M, 0, 0); const foe = put(M, 4, 0, { side: 'dich', mov: 9 }); const P = mkP(M);
+  assert.ok(Play.endTurn(P)); run(P, 2);
+  assert.ok(P.battle); assert.strictEqual(P.mode, 'may'); assert.strictEqual(P.battle.a, foe); assert.strictEqual(P.battle.d, me);
+  assert.strictEqual(foe.x, 2); assert.strictEqual(P.battle.res.forecast.defender.canCounter, false);   // đứng cách 2 bằng lửa đèn: Đăng cầm kiếm không phản đòn được
+  assert.ok(Play.busy(P)); assert.strictEqual(Play.tap(P, 0, 0), 'ban');
+  run(P, 10); assert.ok(P.lastFight); assert.strictEqual(M.turn, 2); assert.strictEqual(P.mode, 'cho');
 });
 t('map thử: một vòng lượt chạy hết, địch không đứng chồng', () => {
   const M = Core.loadMap(DATA.maps.thu, DATA), P = mkP(M); Play.endTurn(P); run(P, 30);

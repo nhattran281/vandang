@@ -18,6 +18,7 @@ Nền kỹ thuật fork từ [Cinderwatch](https://github.com/kevintngo/cinderwa
 ```bash
 python3 tools/build.py      # nối data/*.json + src/*.js + three.js -> index.html
 node tools/test_core.js     # test logic lõi, không cần trình duyệt
+node tools/test_combat.js   # test công thức chiến đấu (2RN, dự báo, trận đấu)
 ```
 
 Mở `index.html` (chạy được từ `file://`). Cờ URL: `#map=thu`, `#biome=fen`, `#sel=4,5` (chọn sẵn ô), `#seed=N`, `#fps=1`, `#manual=1`.

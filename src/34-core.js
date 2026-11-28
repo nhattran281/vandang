@@ -141,6 +141,82 @@ const Core = (() => {
   const unitAt = (S, x, y) => S.units.find(u => u.x === x && u.y === y && u.hp > 0) || null;
   const chestAt = (S, x, y) => S.chests.find(c => c.x === x && c.y === y) || null;
 
+  // ----- Tìm đường & vùng đi được (GDD 3.1–3.2) -----
+  // Luật độ cao lấy từ data.terrain.height; thiếu thì dùng mặc định.
+  const HEIGHT_DEF = { cliff: 2, climbCost: 1 };
+  const heightRule = data => Object.assign({}, HEIGHT_DEF, data.terrain.height || {});
+  const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // thứ tự cố định → kết quả tất định
+  const isSlope = (S, x, y, data) => { const t = terrainOf(S, x, y, data); return !!(t && t.flags && t.flags.includes('doc')); };
+
+  // Bước từ ô a sang ô kề b có qua được luật độ cao không. Quân bay bỏ qua.
+  // Chênh ≥ cliff (lên lẫn xuống) bị chặn, trừ khi ô đi hoặc ô đến là dốc.
+  function canStep(S, ax, ay, bx, by, moveType, data) {
+    if (moveType === 'bay') return true;
+    const a = tile(S, ax, ay), b = tile(S, bx, by);
+    if (!a || !b) return false;
+    return Math.abs(b.h - a.h) < heightRule(data).cliff || isSlope(S, ax, ay, data) || isSlope(S, bx, by, data);
+  }
+
+  // Chi phí một bước a→b: chi phí địa hình ô b + climbCost × số bậc đi lên. null = không đi được.
+  // opts.climbCost ghi đè (để chỉnh theo độ khó).
+  function stepCost(S, ax, ay, bx, by, moveType, data, opts) {
+    const c = moveCost(S, bx, by, moveType, data);
+    if (c === null || !canStep(S, ax, ay, bx, by, moveType, data)) return null;
+    if (moveType === 'bay') return c;
+    const k = opts && opts.climbCost !== undefined ? opts.climbCost : heightRule(data).climbCost;
+    return c + k * Math.max(0, tile(S, bx, by).h - tile(S, ax, ay).h);
+  }
+
+  // Vùng đi được của đơn vị u trong tầm Di chuyển (Dijkstra).
+  // - Đi xuyên quân cùng phe (opts.passSides, mặc định [u.side]); không xuyên phe khác.
+  //   NPC là một phe riêng: ta và địch đều không xuyên qua NPC.
+  // - Vật trên mặt đất (rương): chặn quân đi đất/bơi; quân bay bay qua được nhưng không đậu xuống.
+  //   Mở rương từ ô kề bên.
+  // - Không được dừng trên ô có quân khác.
+  // opts.mov ghi đè tầm di chuyển (Trói = 0, buff +1...); opts.climbCost ghi đè chi phí leo.
+  // Trả về { w, start, cost: Map(idx→chi phí), prev: Map(idx→idx), stops: [idx...] }, idx = y*w+x.
+  function reachable(S, u, data, opts) {
+    opts = opts || {};
+    const mov = opts.mov !== undefined ? opts.mov : u.stats.mov;
+    const pass = opts.passSides || [u.side];
+    const occ = new Map(), ground = new Set(), flying = u.moveType === 'bay';
+    for (const o of S.units) if (o !== u && o.hp > 0) occ.set(o.y * S.w + o.x, o);
+    for (const c of S.chests) ground.add(c.y * S.w + c.x);
+    const start = u.y * S.w + u.x;
+    const cost = new Map([[start, 0]]), prev = new Map(), open = [start];
+    while (open.length) {
+      let bi = 0; // map ≤ 16×20 nên quét mảng là đủ nhanh, không cần heap
+      for (let i = 1; i < open.length; i++) {
+        const ci = cost.get(open[i]), cb = cost.get(open[bi]);
+        if (ci < cb || (ci === cb && open[i] < open[bi])) bi = i;
+      }
+      const cur = open.splice(bi, 1)[0], cx = cur % S.w, cy = (cur / S.w) | 0, cc = cost.get(cur);
+      for (const [dx, dy] of DIRS) {
+        const nx = cx + dx, ny = cy + dy, ni = ny * S.w + nx;
+        if (!inside(S, nx, ny) || (ground.has(ni) && !flying)) continue;
+        const step = stepCost(S, cx, cy, nx, ny, u.moveType, data, opts);
+        if (step === null || cc + step > mov) continue;
+        const o = occ.get(ni);
+        if (o && !pass.includes(o.side)) continue;
+        if (!cost.has(ni) || cc + step < cost.get(ni)) {
+          if (!cost.has(ni)) open.push(ni);
+          cost.set(ni, cc + step); prev.set(ni, cur);
+        }
+      }
+    }
+    const stops = [...cost.keys()].filter(i => i === start || (!occ.has(i) && !ground.has(i))).sort((a, b) => a - b);
+    return { w: S.w, start, cost, prev, stops };
+  }
+
+  // Đường đi [[x,y],...] từ ô xuất phát tới (x,y) theo kết quả reachable; null nếu không tới được.
+  function pathTo(R, x, y) {
+    let i = y * R.w + x; if (!R.cost.has(i)) return null;
+    const out = [[x, y]];
+    while (i !== R.start) { i = R.prev.get(i); out.push([i % R.w, (i / R.w) | 0]); }
+    return out.reverse();
+  }
+  const canStopAt = (R, x, y) => R.stops.includes(y * R.w + x);
+
   // Xuất lại 3 lớp ASCII (để kiểm tra vòng đọc→ghi và để lưu map đã sửa).
   function toAscii(S) {
     const terrain = [], height = [], units = [];
@@ -156,5 +232,5 @@ const Core = (() => {
     return { terrain, height, units };
   }
 
-  return { rng, validateMap, loadMap, makeUnit, makeWeapon, canWield, usable, equipFirst, validateWeapons, RANKS, inside, tile, terrainOf, moveCost, unitAt, chestAt, toAscii, STAT_KEYS };
+  return { rng, validateMap, loadMap, makeUnit, makeWeapon, canWield, usable, equipFirst, validateWeapons, RANKS, inside, tile, terrainOf, moveCost, unitAt, chestAt, toAscii, STAT_KEYS, heightRule, canStep, stepCost, reachable, pathTo, canStopAt };
 })();

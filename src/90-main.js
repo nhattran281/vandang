@@ -53,7 +53,7 @@ function camZoomBy(f) { camZoomTo(camZoomNow() * f); }
 
 // ===== Vân Đăng · Vòng lặp chính =====
 // Trạng thái chạy của ứng dụng (không phải logic trận). 20-post đọc G.phase.
-const G = { t: 0, phase: 'play', paused: false, speed: 1, map: null, B: null, sel: null, cursor: null };
+const G = { t: 0, phase: 'play', paused: false, speed: 1, map: null, B: null, sel: null, cursor: null, play: null, last: '' };
 
 // Từ toạ độ màn hình (CSS px) ra ô map: chiếu tia camera xuống mặt phẳng, tinh chỉnh theo độ cao ô.
 const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _pl = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), _hit = new THREE.Vector3();
@@ -65,6 +65,22 @@ function pickTile(cssX, cssY) {
 }
 function screenOfTile(x, y) { const w = tileWorld(G.map, x, y), v = new THREE.Vector3(w.x, standY(G.map, x, y), w.z).project(R.cam); return [Math.round((v.x + 1) / 2 * R.cssW), Math.round((1 - v.y) / 2 * R.cssH)]; }
 function selectTile(p) { G.sel = p && Core.inside(G.map, p.x, p.y) ? { x: p.x, y: p.y } : null; }
+// Một lần chạm vào bàn cờ (p = null: chạm ra ngoài). Luật chọn/đi nằm trong Play (36-play); ở đây chỉ cập nhật con trỏ ô.
+function tapTile(p) {
+  const P = G.play, ev = G.last = Play.tap(P, p ? p.x : null, p ? p.y : null);
+  if (ev === 'chon') selectTile({ x: P.unit.x, y: P.unit.y });
+  else if (ev === 'dich' || ev === 'xem' || ev === 'quaduoc' || ev === 'di') selectTile(p);
+  else if (ev === 'huy') G.sel = null;
+  return ev;
+}
+// Nút HUD: Chờ / Hoàn tác / Hết lượt
+function hudAction(act) {
+  const P = G.play; let ok = false;
+  if (act === 'cho') { ok = Play.wait(P); if (ok) G.sel = null; }
+  else if (act === 'hoantac') { ok = Play.undo(P); if (ok) selectTile({ x: P.unit.x, y: P.unit.y }); }
+  else if (act === 'hetluot') { ok = Play.endTurn(P); if (ok) G.sel = null; }
+  G.last = act; return ok;
+}
 
 function initInput() {
   const el = R.canvas, pts = new Map(); let drag = 0, pinch = 0;
@@ -78,12 +94,16 @@ function initInput() {
     }
     p.x = e.clientX; p.y = e.clientY;
   });
-  const up = e => { const p = pts.get(e.pointerId); if (!p) return; pts.delete(e.pointerId); if (!drag && !pinch && pts.size === 0) selectTile(pickTile(e.clientX, e.clientY)); if (pts.size === 0) pinch = 0; };
+  const up = e => { const p = pts.get(e.pointerId); if (!p) return; pts.delete(e.pointerId); if (!drag && !pinch && pts.size === 0) { const act = HUD.hit(e.clientX, e.clientY); if (act) hudAction(act); else tapTile(pickTile(e.clientX, e.clientY)); } if (pts.size === 0) pinch = 0; };
   el.addEventListener('pointerup', up); el.addEventListener('pointercancel', e => { pts.delete(e.pointerId); drag = 1; });
   el.addEventListener('wheel', e => { e.preventDefault(); camZoomAt(Math.exp(-e.deltaY * .0015), e.clientX * R.dpr, e.clientY * R.dpr); }, { passive: false });
   window.addEventListener('keydown', e => {
     const s = G.sel; let m = null;
-    if (e.key === 'Escape') G.sel = null;
+    const P = G.play;
+    if (P.mode === 'menu') { if (e.key === 'Enter' || e.key === ' ') hudAction('cho'); else if (e.key === 'Escape' || e.key === 'Backspace') hudAction('hoantac'); return; }
+    if (e.key === 'Escape') { Play.cancel(P); G.sel = null; }
+    else if (e.key === 'e' || e.key === 'E') hudAction('hetluot');
+    else if (e.key === 'Enter' || e.key === ' ') tapTile(s);
     else if (e.key === 'f' || e.key === 'F' || e.key === '0') camReset();
     else if (e.key === 'ArrowUp' || e.key === 'w') m = [0, -1]; else if (e.key === 'ArrowDown' || e.key === 's') m = [0, 1];
     else if (e.key === 'ArrowLeft' || e.key === 'a') m = [-1, 0]; else if (e.key === 'ArrowRight' || e.key === 'd') m = [1, 0];
@@ -95,7 +115,9 @@ function step(dt) {
   G.t += dt; SH.uTime.value = G.t;
   beginParts();
   updateFX(dt, G.t);
-  drawUnits(G.map, G.t, G.sel);
+  Play.update(G.play, dt);
+  drawUnits(G.map, G.t, G.play);
+  updateOverlay(G.play, G.t);
   const c = G.cursor; if (G.sel) { const w = tileWorld(G.map, G.sel.x, G.sel.y); c.visible = true; c.position.set(w.x, standY(G.map, G.sel.x, G.sel.y) + .04, w.z); c.material.opacity = .6 + .3 * Math.sin(G.t * 5); } else c.visible = false;
   updateBiomeLook(dt);
   updateCamera(dt);
@@ -138,7 +160,8 @@ function boot() {
   if (HASH.biome) S.biome = HASH.biome;
   const B = G.B = buildGridBoard(S, +(HASH.seed || 1));
   R.scene.add(B.group); activateGridBoard(B);
-  initUnitViews(S); G.cursor = makeTileCursor(); initInput();
+  G.play = Play.create(S, DATA);
+  initUnitViews(S); initOverlay(); G.cursor = makeTileCursor(); initInput();
   window.addEventListener('resize', resizeRenderer);
   window.addEventListener('orientationchange', () => setTimeout(resizeRenderer, 120));
   if (window.visualViewport) window.visualViewport.addEventListener('resize', resizeRenderer);
@@ -146,7 +169,7 @@ function boot() {
   R.canvas.addEventListener('webglcontextrestored', () => location.reload());
   document.addEventListener('visibilitychange', () => { if (!document.hidden) _last = performance.now(); });
   // Móc cho công cụ (tools/cdp.js, tools/record.js): __vd, giữ tên cũ __cw để công cụ Cinderwatch vẫn chạy.
-  window.__vd = window.__cw = { G, R, CAM, LT, FX, Core, DATA, step, pickTile, screenOfTile, selectTile, tick(dt, render) { R.frameDt = dt; step(dt); R.fade = 1; applyCamera(); if (render) renderFrame(); HUD.draw(); } };
+  window.__vd = window.__cw = { G, R, CAM, LT, FX, Core, Play, OVL, DATA, step, pickTile, screenOfTile, selectTile, tapTile, hudAction, HUD, tick(dt, render) { R.frameDt = dt; step(dt); R.fade = 1; applyCamera(); if (render) renderFrame(); HUD.draw(); } };
   if (HASH.sel) { const [x, y] = HASH.sel.split(',').map(Number); selectTile({ x, y }); }
   if (HASH.ff) { const n = Math.round(+HASH.ff * 30); for (let i = 0; i < n; i++) step(1 / 30); R.fade = 1; }
   if (HASH.cam) window.__vd.lock = HASH.cam.split(',').map(Number);

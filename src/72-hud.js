@@ -17,7 +17,8 @@ const HUD = {
     c.font = `600 ${fs * 1.15}px system-ui, sans-serif`; c.fillStyle = '#e8b04a';
     c.fillText('Vân Đăng · ' + S.name, sl + pad, st + pad);
     c.font = `400 ${fs * .8}px system-ui, sans-serif`; c.fillStyle = 'rgba(200,190,170,.8)';
-    c.fillText(this.hint(), sl + pad, st + pad + fs * 1.5);
+    // Gợi ý không được đè nút Hết lượt (góc trên phải, rộng 104): ép chữ vào bề rộng còn lại.
+    c.fillText(this.hint(), sl + pad, st + pad + fs * 1.5, W - sl - sr - pad * 3 - 104 * d);
     if (HASH.fps && R.fpsText) c.fillText(R.fpsText, sl + pad, st + pad + fs * 2.7);
     const P = G.play;
     // Nút Hết lượt (góc trên phải): khi đang lượt ta và không ở giữa một nước đi
@@ -39,7 +40,9 @@ const HUD = {
     // Chọn mục tiêu: bảng dự báo (nếu đã chạm một địch) + Quay lại / Đánh
     if (P.mode === 'muctieu') {
       let y = H - sb - pad;
-      if (P.fc) { const fh = this.forecast(c, P.unit, P.foe, P.fc, sl + pad, y, Math.min(W - sl - sr - pad * 2, 400 * d), d, false); y -= fh; }
+      const pw = Math.min(W - sl - sr - pad * 2, 400 * d);
+      if (P.fc) { const fh = this.forecast(c, P.unit, P.foe, P.fc, sl + pad, y, pw, d, false, P.wpn); y -= fh; }
+      if (P.fc && P.wpns.length > 1) y = this.weaponBar(c, P, sl + pad, y, pw, d);
       this.row(c, P.fc ? [['Quay lại', 'quaylai'], ['Đánh', 'xacnhan']] : [['Quay lại', 'quaylai']], y, sl, sr, W, pad, d);
     }
     // Phát lại trận
@@ -55,9 +58,20 @@ const HUD = {
     const n = acts.length, bh = 50 * d, bw = Math.min(118 * d, (W - sl - sr - pad * (n + 1)) / n), y = bottom - pad - bh;
     acts.forEach(([label, act], i) => this.button(c, label, act, W - sr - pad - (n - i) * bw - (n - 1 - i) * pad, y, bw, bh, i === n - 1));
   },
+  // Thanh đổi vũ khí trên bảng dự báo: [◀]  Lửa đèn · 1/2  [▶]. Trả về mép trên mới.
+  weaponBar(c, P, x, bottom, w, d) {
+    const h = 46 * d, y = bottom - h - 6 * d, bw = 56 * d, i = P.wpns.indexOf(P.wpn) + 1;
+    this.panel(c, x, y, w, h);
+    this.button(c, '◀', 'vukhitruoc', x, y, bw, h, false); this.button(c, '▶', 'vukhisau', x + w - bw, y, bw, h, false);
+    c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#f2e6cc'; c.font = `600 ${15 * d}px system-ui, sans-serif`;
+    c.fillText(`${P.wpn.name} · ${i}/${P.wpns.length}`, x + w / 2, y + h / 2 + d, w - bw * 2 - 12 * d);
+    c.textAlign = 'left'; c.textBaseline = 'top';
+    return y;
+  },
   // Bảng dự báo dọc kiểu FE: cột trái = bên đánh (ta), giữa = tên dòng, cột phải = bên bị đánh. Canh đáy tại `bottom`; trả về chiều cao.
-  // bv (khi phát lại): HP lấy theo HP đang hiện, có thanh máu tụt dần.
-  forecast(c, a, b, fc, x, bottom, w, d, bv) {
+  // bv (khi phát lại): HP lấy theo HP đang hiện, có thanh máu tụt dần. wa: vũ khí bên đánh đang xem (mặc định món đang cầm).
+  forecast(c, a, b, fc, x, bottom, w, d, bv, wa) {
+    const wA = wa || a.weapon, wB = b.weapon;
     const A = fc.attacker, D = fc.defender, fs = 15 * d, lh = fs * 1.55, pad = 10 * d;
     const COL = { ta: '#8fc4ff', dich: '#ff8f74', npc: '#9fd98a' }, EFF = '#ffb347', DIM = 'rgba(200,190,170,.75)';
     const dash = '–', can = [A.canAttack, D.canCounter];
@@ -72,7 +86,7 @@ const HUD = {
       ['Trúng', s => s.hit, true],
       ['Chí mạng', s => s.crit],
     ];
-    if (hasUses) rows.push(['Độ bền', s => s.uses === null ? dash : s.uses + '/' + (s === A ? a : b).weapon.maxUses]);
+    if (hasUses) rows.push(['Độ bền', s => s.uses === null ? dash : s.uses + '/' + (s === A ? wA : wB).maxUses]);
     const effH = effs.some(e => e) ? fs * 1.25 : 0;
     const h = pad * 2 + fs * 1.3 + fs * 1.15 + effH + rows.length * lh + (bv ? fs * .9 : 0), y = bottom - h;
     this.panel(c, x, y, w, h);
@@ -84,8 +98,8 @@ const HUD = {
     c.fillStyle = sideOf(a); c.textAlign = 'left'; c.fillText(a.name, x + pad, yy);
     c.fillStyle = sideOf(b); c.textAlign = 'right'; c.fillText(b.name, x + w - pad, yy);
     yy += fs * 1.3; c.font = `400 ${fs * .85}px system-ui, sans-serif`; c.fillStyle = DIM;
-    c.textAlign = 'left'; c.fillText(a.weapon ? a.weapon.name : dash, x + pad, yy);
-    c.textAlign = 'right'; c.fillText(b.weapon ? b.weapon.name : dash, x + w - pad, yy);
+    c.textAlign = 'left'; c.fillText(wA ? wA.name : dash, x + pad, yy);
+    c.textAlign = 'right'; c.fillText(wB ? wB.name : dash, x + w - pad, yy);
     yy += fs * 1.15;
     if (effH) {
       c.font = `600 ${fs * .78}px system-ui, sans-serif`; c.fillStyle = EFF;
@@ -175,7 +189,7 @@ const HUD = {
     if (P.over) return 'Trận đã kết thúc · tải lại trang để chơi lại';
     if (P.banner) return '';
     if (P.battle) return 'Đang giao chiến…';
-    if (P.mode === 'muctieu') return P.fc ? 'Chạm lại mục tiêu hoặc nút Đánh để xác nhận' : 'Chạm quân địch trong ô đỏ để xem dự báo';
+    if (P.mode === 'muctieu') return P.fc ? (P.wpns.length > 1 ? '◀ ▶ đổi vũ khí · chạm lại mục tiêu hoặc Đánh để xác nhận' : 'Chạm lại mục tiêu hoặc nút Đánh để xác nhận') : 'Chạm quân địch trong ô đỏ để xem dự báo';
     if (P.mode === 'may') return (P.S.phase === 'npc' ? 'NPC' : 'Phe địch') + ' đang đi…';
     if (P.mode === 'di') return 'Đang đi…';
     if (P.mode === 'menu') return Play.targets(P).length ? 'Chọn: Đánh · Chờ · Hoàn tác' : 'Chọn: Chờ (kết thúc) hoặc Hoàn tác (về ô cũ)';

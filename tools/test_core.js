@@ -203,4 +203,26 @@ t('Đăng ngã khi phản đòn → thua trận, khóa thao tác', () => {
   toMenu(P, 0, 0); Play.attack(P); Play.tap(P, 1, 0); Play.tap(P, 1, 0); run(P, 10);
   assert.strictEqual(me.hp, 0); assert.ok(P.over); assert.strictEqual(P.over.text, 'Thua trận'); assert.strictEqual(Play.tap(P, 1, 0), 'ban'); assert.ok(!Play.endTurn(P));
 });
+// ----- Đổi vũ khí tự do khi đánh (GDD 2.5) -----
+t('mục tiêu tính theo mọi vũ khí trong túi; ◀ ▶ chỉ đổi giữa các món với tới; dự báo không đổi món đang cầm', () => {
+  const M = mk(['.....']); const me = put(M, 0, 0, { mov: 0 }); const foe = put(M, 2, 0, { side: 'dich' }); const P = mkP(M);   // Đăng: kiếm sắt (tầm 1) + lửa đèn (tầm 1–2)
+  assert.strictEqual(me.weapon.id, 'kiem_sat');
+  toMenu(P, 0, 0); assert.ok(Play.attack(P)); eq(P.targets.map(u => u.uid), [foe.uid]);                 // cách 2: chỉ lửa đèn với tới
+  Play.tap(P, 2, 0); eq(P.wpns.map(w => w.id), ['lua_den']); assert.strictEqual(P.wpn.id, 'lua_den'); assert.ok(!Play.cycleWeapon(P, 1));
+  assert.strictEqual(me.weapon.id, 'kiem_sat');                                                         // xem dự báo không trang bị
+  foe.x = 1; Play.back(P); Play.attack(P); Play.tap(P, 1, 0);
+  eq(P.wpns.map(w => w.id), ['kiem_sat', 'lua_den']); assert.strictEqual(P.wpn.id, 'kiem_sat');         // mặc định món đang cầm
+  assert.strictEqual(P.fc.attacker.atk, me.stats.str + 5);                                              // kiếm sắt: Sức + 5
+  assert.ok(Play.cycleWeapon(P, 1)); assert.strictEqual(P.wpn.id, 'lua_den');
+  assert.strictEqual(P.fc.attacker.atk, me.stats.mag + 5); assert.strictEqual(me.weapon.id, 'kiem_sat');  // lửa đèn: Phép + 5
+  assert.ok(Play.cycleWeapon(P, -1)); assert.strictEqual(P.wpn.id, 'kiem_sat');
+});
+t('xác nhận: món đã chọn thành món đang cầm, lên đầu túi; vũ khí chưa đủ hạng không được chọn', () => {
+  const M = mk(['....']); const me = put(M, 0, 0, { mov: 0 }); put(M, 1, 0, { side: 'dich' }); put(M, 3, 0); const P = mkP(M);
+  me.inventory.push(Core.makeWeapon('kiem_bac', DATA));                                                  // hạng A, Đăng mới hạng C
+  toMenu(P, 0, 0); Play.attack(P); Play.tap(P, 1, 0); eq(P.wpns.map(w => w.id), ['kiem_sat', 'lua_den']);
+  Play.cycleWeapon(P, 1); Play.tap(P, 1, 0);
+  assert.strictEqual(me.weapon.id, 'lua_den'); assert.strictEqual(me.inventory[0].id, 'lua_den');
+  assert.strictEqual(P.battle.res.forecast.attacker.atk, me.stats.mag + 5);                              // đánh bằng Phép + Uy lực lửa đèn
+});
 console.log(n + ' bài kiểm thử đạt');

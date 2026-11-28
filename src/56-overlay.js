@@ -23,9 +23,11 @@ function buildOverlay(P) {
   const quad = (a, b, c, d, rgba) => { for (const p of [a, b, c, a, c, d]) { pos.push(p[0], p[1], p[2]); col.push(rgba[0], rgba[1], rgba[2], rgba[3]); } };
   const sq = (x, y, c, k) => { const w = tileWorld(S, x, y), yy = ovlY(S, x, y), h = TS / 2 * (k || .9); quad([w.x - h, yy, w.z - h], [w.x - h, yy, w.z + h], [w.x + h, yy, w.z + h], [w.x + h, yy, w.z - h], c); };
   if (P.mode === 'muctieu' && P.unit) {
-    const u = P.unit, wp = u.weapon, lo = wp ? wp.minRange : 1, hi = wp ? wp.maxRange : 0;
+    // Tầm đánh: của món đang xem khi đã chọn mục tiêu; chưa chọn thì gộp tầm mọi vũ khí dùng được trong túi.
+    const u = P.unit, ws = P.foe && P.wpn ? [P.wpn] : Play.usableWeapons(u);
+    const lo = Math.min(...ws.map(w => w.minRange)), hi = Math.max(...ws.map(w => w.maxRange));
     for (let y = 0; y < S.h; y++) for (let x = 0; x < S.w; x++) {
-      const d = Math.abs(x - u.x) + Math.abs(y - u.y); if (d < lo || d > hi) continue;
+      const d = Math.abs(x - u.x) + Math.abs(y - u.y); if (d < lo || d > hi || !ws.some(w => d >= w.minRange && d <= w.maxRange)) continue;
       const o = Core.unitAt(S, x, y), foe = o && P.targets.includes(o);
       sq(x, y, foe ? (o === P.foe ? OVL.COL.aim : OVL.COL.foe) : OVL.COL.reach);
     }

@@ -14,7 +14,7 @@
     "lordDeath": 4
   },
   "minScore": 0,
-  "_behaviors": "Hành vi gắn theo đơn vị (GDD 4). Khai báo ở mẫu (units.json → ai: { type, ...tham số }) hoặc roster của map ({ tpl, ai }), ghi đè tham số mặc định dưới đây. Hành vi chỉ lọc ô đứng / cộng điểm / đổi phương án không đánh của planTurn. lao_vao (mặc định): tiến về địch. giu_vi_tri: chỉ đứng trong bán kính radius quanh ô xuất phát, ra ngoài thì quay về. cho_tam: đứng yên tới khi đánh được ai đó lượt này hoặc bị thương, từ đó như lao_vao (u.awake). dung_yen: không rời ô (boss). ho_ve: chỉ đứng trong bán kính radius quanh đơn vị follow (id mẫu hoặc uid), thưởng ×protect khi hạ địch đe dọa người đó, không đánh được thì đứng ô an toàn nhất cạnh người đó. dao_tac: tới ô kề rương chưa mở → mở (cần moRuong) → chạy tới ô thoát (exits của map, mặc định mép map) rồi rời trận; hết rương thì dùng hành vi then. chua_tri: hồi đồng minh máu thấp nhất; không ai bị thương thì theo đồng minh gần nhất trong bán kính radius, chọn ô an toàn.",
+  "_behaviors": "Hành vi gắn theo đơn vị (GDD 4). Khai báo ở mẫu (units.json → ai: { type, ...tham số }) hoặc roster của map ({ tpl, ai }), ghi đè tham số mặc định dưới đây. Hành vi chỉ lọc ô đứng / cộng điểm / đổi phương án không đánh của planTurn. lao_vao (mặc định): tiến về địch. giu_vi_tri: chỉ đứng trong bán kính radius quanh ô xuất phát, ra ngoài thì quay về. cho_tam: đứng yên tới khi đánh được ai đó lượt này hoặc bị thương, từ đó như lao_vao (u.awake). dung_yen: không rời ô (boss). ho_ve: chỉ đứng trong bán kính radius quanh đơn vị follow (id mẫu hoặc uid), thưởng ×protect khi hạ địch đe dọa người đó, không đánh được thì đứng ô an toàn nhất cạnh người đó. dao_tac: tới ô kề rương chưa mở → mở (cần moRuong) → chạy tới ô thoát (exits của map, mặc định mép map) rồi rời trận; hết rương thì dùng hành vi then. chua_tri: hồi đồng minh máu thấp nhất; không ai bị thương thì theo đồng minh gần nhất trong bán kính radius, chọn ô an toàn. toi_dich (tuần 5 mục 5): như lao_vao nhưng phương án không đánh là tiến về vùng đích của chương (win area, hoặc reach nếu quân thuộc units); tới nơi thì đứng ô an toàn nhất trong vùng; chương không có vùng đích thì như lao_vao. Dùng cho AI phe ta (AI vs AI, demo).",
   "behaviors": {
     "lao_vao": {},
     "giu_vi_tri": {
@@ -31,6 +31,7 @@
     },
     "chua_tri": {
       "radius": 2
-    }
+    },
+    "toi_dich": {}
   }
 }

@@ -6,7 +6,7 @@ Nền kỹ thuật fork từ [Cinderwatch](https://github.com/kevintngo/cinderwa
 
 ![Map thử trên điện thoại](media/tuan1-dien-thoai.jpg)
 
-## Trạng thái: Tuần 5 (lên cấp, lưu game, đủ quân Ch.1–3, khung chương + Ch.1)
+## Trạng thái: Tuần 5 (lên cấp, lưu game, đủ quân Ch.1–3, khung chương + Ch.1–3)
 
 - Đã gỡ logic tower defense (`60-towers`, `61-monsters`, `62-game`).
 - Dữ liệu dạng JSON trong `data/`, được nhúng vào bản build.
@@ -19,6 +19,10 @@ Nền kỹ thuật fork từ [Cinderwatch](https://github.com/kevintngo/cinderwa
 - Tuần 5 mục 3: đủ class + nhân vật + quái cho Ch.1–3 (GDD 7, 8). Class mới: Hát Rong (Cuội), Cung Thủ (Hùng Nỏ, lính Viện cung), Ma Nước, Ma Trành, Yêu Thú, Bóng Đè; mỗi class ghi `weaponTypes` (loại vũ khí cầm được). Phe ta thêm **Cuội** (Nhịp đàn 4: Hát Xẩm · Nói Phét · Vè Khích — dữ liệu, hiệu ứng chạy ở tuần 8) và **Hùng Nỏ** (Nỏ tay, khắc Bay). Địch: lính Viện kiếm/giáo/cung, Ma da (Ma, Thủy, chỉ đi nước), Ma trành, Hùm tinh (boss nhỏ, Yêu), Ma đè (Ma, Âm khí đánh vào Kháng); hành vi AI mặc định khai báo trong mẫu. Vũ khí bẩm sinh của quái: loại `vuot` (Nanh vuốt) và `am_khi` (Âm khí). Cơ chế riêng của quái (Ma da kéo/ẩn nước, trành tiếp sức Hùm tinh, Ma đè gây Ngủ) ghi ở `units.json → traits` / `traitTypes` (live: false, tuần 8). **Cung/nỏ đứng cao hơn mục tiêu +1 tầm** (GDD 3.2; `weapons.json → types.highGround`, `Core.rangeBonus`), áp cả khi phản đòn, cho bảng dự báo, menu Đánh và AI. Phần vẽ đọc `look.rig` (người: foot/ogre/…; quái: wraith/wolf/…) và các cờ bộ phận (`units.json → _look`).
 - Tuần 5 mục 4: **khung chương + Ch.1 Làng Chài Cháy**. Danh sách chương chuyển sang `data/chapters.json` (thay `campaign.json`): map, ghi đè lớp quân/roster (dùng lại map), gia nhập, điều kiện thắng/thua, luật chương (`noSkills`, `noStatus`, `fog`, `deadZone`), hội thoại mở/kết, gợi ý hướng dẫn. Điều kiện chung `Core.outcome` (34-core): hạ hết địch · tới ô đích (mặc định = `exits`) · hạ boss · cả đội tới vùng · giữ sống N lượt; thua: Đăng/Linh ngã · quá N lượt · quân cần bảo vệ ngã. Luồng: màn chính → **màn chương** (mục tiêu, luật, gia nhập, hội thoại) → trận (dòng mục tiêu, gợi ý hướng dẫn 2 lượt đầu, ô đích tô vàng) → **kết quả** (lý do, số lượt, quân ngã, đã lưu, hội thoại kết) → Chương sau. Map A `lang_chai` (biển phía Bắc, bến + 2 thuyền = ô đích, nhà tranh từ ô `#` qua `decor`). `noSkills` chặn kỹ năng ở cả AI và `Core.useSkill`.
 
+- Tuần 5 mục 5: **Ch.2 Bến Đò Sương + Ch.3 Rừng Trành**. Map B `ben_do` (sông nước sâu chia đôi, 1 cầu hẹp cột 4 + bãi nước nông quanh co cột 8–9; bờ bắc có hai gò cao 1 bậc cho cung). Ch.2: Cuội gia nhập, mở kỹ năng, thắng = cả đội vào bờ bắc (`area` dòng 0–4); địch: 2 cung giữ gò (bán kính 2), giáo chặn đầu cầu (bán kính 1), kiếm hộ vệ cung, 3 Ma da dưới nước kề lối qua (chỉ phản ứng khi vào tầm). Map C `rung_co_thu` (hang Hùm tinh trên cao 2 bậc, lên bằng 2 dốc: lối mòn hẹp phía Tây và sườn cao phía Đông; giữa là rừng dày). Ch.3: Hùng Nỏ gia nhập, cờ trạng thái mở, thắng = hạ Hùm tinh; địch: Hùm tinh giữ hang (bán kính 2), 4 Ma trành chặn hai lối (bán kính 1), 2 Ma đè (1 phục trong rừng, 1 hộ vệ Hùm tinh). **Chờ tuần 8:** Ma da kéo, Hát Xẩm thêm lượt, Ngủ, trành tiếp sức Hùm tinh (chương vẫn chơi trọn). AI thêm hành vi **Tới đích** (`toi_dich`) cho phe ta khi AI vs AI: không có nước đánh tốt thì tiến về vùng đích; Đăng/Linh chỉ nhích qua ô không nguy hiểm hơn ô đang đứng.
+
+![Ch.2 Bến Đò Sương](media/tuan5-ch2-ben-do.png) ![Ch.3 Rừng Trành](media/tuan5-ch3-rung-tranh.png)
+
 ## Chạy, build, test
 
 ```bash
@@ -30,7 +34,7 @@ node tools/test_ai.js       # test AI chấm điểm + AI vs AI
 node tools/test_level.js    # test bảng class, EXP, lên cấp, hạng vũ khí
 node tools/test_save.js     # test lưu game (chiến dịch, lưu chương, lưu tạm + RNG, bản lưu hỏng)
 node tools/test_data.js     # test dữ liệu class/nhân vật/quái Ch.1–3, cơ chế quái (tuần 8), cung/nỏ đứng cao +1 tầm
-node tools/test_chapter.js  # test chapters.json, điều kiện thắng/thua, luật chương, luồng chương; AI vs AI 100 trận Ch.1
+node tools/test_chapter.js  # test chapters.json, điều kiện thắng/thua, luật chương, luồng chương, Ch.1–3; AI vs AI 100 trận mỗi chương
 ```
 
 Mở `index.html` (chạy được từ `file://`). Cờ URL: `#map=thu`, `#ch=ch1` (chạy thẳng một chương từ màn chương, bản lưu tạm trong bộ nhớ, không đụng bản lưu thật; thêm `&skip=1` để bỏ màn chương), `#biome=fen`, `#sel=4,5` (chọn sẵn ô), `#seed=N`, `#fps=1`, `#manual=1`.

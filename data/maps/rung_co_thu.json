@@ -1,0 +1,85 @@
+{
+ "_doc": "Map C — Rừng cổ thụ (GDD 9.1; Ch.3 ngày, Ch.6 dùng lại với rễ Mộc tinh). Hang Hùm tinh trên cao nguyên phía Bắc (độ cao 2, vách quanh). Hai lối lên: lối mòn hẹp phía Tây (đường 1 ô quanh co giữa rừng, lên hang qua dốc (3,3)) và sườn núi phía Đông (dải cao 2 ở cột 9–10, vào bằng dốc (9,12), cung/nỏ đứng đây cao hơn rừng). Giữa là rừng dày (chi phí 2, Né +20, Thủ +1), không leo lên hang được. Quân ta ở khoảng trống phía Nam.",
+ "id": "rung_co_thu",
+ "name": "Rừng cổ thụ",
+ "biome": "ashen",
+ "terrain": [
+  "MMF......FMM",
+  "MF........FM",
+  "FF........FF",
+  "FFF^FFFFF.FF",
+  "FF.=FFFFF..F",
+  "FF=FFFFFF..F",
+  "F.=FFFFFF..F",
+  "F=FFFFFFF..F",
+  "F=FFFFFFF..F",
+  "F.=FFFFFF..F",
+  "FF=FFFFFF..F",
+  "FF.=FFFFF..F",
+  "F..=.FF..^.F",
+  "F....==....F",
+  "FF..=..=..FF",
+  "MF........FM"
+ ],
+ "height": [
+  "332222222233",
+  "322222222223",
+  "222222222222",
+  "222222222222",
+  "000000000220",
+  "000000000220",
+  "000000000220",
+  "000000000220",
+  "000000000220",
+  "000000000220",
+  "000000000220",
+  "000000000220",
+  "000000000200",
+  "000000000000",
+  "000000000000",
+  "100000000001"
+ ],
+ "units": [
+  "............",
+  ".....E......",
+  "......E.....",
+  "............",
+  "............",
+  ".........E..",
+  "..E.........",
+  "............",
+  ".E....E...E.",
+  "............",
+  "............",
+  "............",
+  "............",
+  "....AAA.....",
+  ".....AA.....",
+  "............"
+ ],
+ "roster": {
+  "A": [
+   "dang",
+   "tran",
+   "hung_no",
+   "linh",
+   "cuoi"
+  ],
+  "E": [
+   "hum_tinh",
+   {
+    "tpl": "ma_de",
+    "ai": {
+     "type": "ho_ve",
+     "follow": "hum_tinh",
+     "radius": 1
+    }
+   },
+   "ma_tranh",
+   "ma_tranh",
+   "ma_tranh",
+   "ma_de",
+   "ma_tranh"
+  ]
+ }
+}
